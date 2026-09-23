@@ -1,0 +1,67 @@
+---
+title: Heal loop
+description: Breaking drift becomes a plan, a type-check, and a branch. The agent edits. A human merges.
+sidebar:
+  order: 7
+  label: Heal loop
+---
+
+Healing is split on purpose. Apiweld does the deterministic work. The coding agent edits call sites. A person merges. Nothing in this loop is auto-merged, including the pull request a CI template might open in your repository.
+
+You can run it with no agent at all. `apiweld heal` still produces a branch with the regenerated client and a list of call sites that no longer type-check. That is most of a fix, without a model in the path.
+
+## Steps
+
+<Steps>
+  <Step title="Regenerate into a worktree">
+    The new client is written to a temporary git worktree. The working tree you have open is untouched until you accept the plan.
+  </Step>
+  <Step title="Type-check for impact">
+    The TypeScript compiler runs over the project, using its `tsconfig.json`, against the new client. Each error becomes a finding: file, line, symbol, and the engine finding it traces to. Matching is by operation and generated symbol name. There is no heuristic pass and no model.
+  </Step>
+  <Step title="Write the plan">
+    `.apiweld/reports/<api>-<date>.json` and a Markdown twin. The plan lists findings, affected call sites, and hints taken from the spec — a likely rename, or a successor mentioned by a deprecation extension or a description.
+  </Step>
+  <Step title="Let the agent edit">
+    The agent reads the plan with `get_heal_plan`, applies the regenerated client with `apiweld heal --apply`, fixes call sites, and calls `verify` until the type-check and the configured test command pass.
+  </Step>
+  <Step title="Review and merge">
+    Locally this is an ordinary diff. In CI, the GitHub Action template runs `apiweld check`, then opens a branch and a pull request whose description is the plan. The workflow uses your token, in your repository. Apiweld does not merge it.
+  </Step>
+</Steps>
+
+## Plan shape
+
+A plan is JSON first. The Markdown file is the same content for a reviewer who does not want to read the structure.
+
+```json
+{
+  "api": "stripe",
+  "from": { "specHash": "sha256:9f2c…", "version": "2026-08-27" },
+  "to": { "specHash": "sha256:77aa…", "version": "2026-09-15" },
+  "findings": [
+    {
+      "id": "response-property-removed",
+      "level": "breaking",
+      "operation": "GET /v1/refunds/{refund}",
+      "detail": "removed property 'failure_balance_transaction' from the 200 response",
+      "callSites": [
+        {
+          "file": "src/billing/refunds.ts",
+          "line": 42,
+          "symbol": "Refund.failure_balance_transaction",
+          "tsError": "TS2339: Property 'failure_balance_transaction' does not exist on type 'Refund'."
+        }
+      ],
+      "hints": ["No replacement field found in the new schema."]
+    }
+  ],
+  "verify": { "typecheck": "tsc --noEmit", "test": "pnpm test" }
+}
+```
+
+`verify` records the commands the agent (or you) should go green on. `apiweld verify` runs them. It does not invent a test runner: the test command is whatever you configured, and it is omitted when you did not.
+
+## What the agent is not asked to do
+
+The agent is not asked to reinterpret the spec from scratch. The plan already names the operation, the symbol, and the compiler error. The agent's job is the edit that makes `verify` pass, in a diff you can read. If it cannot, the plan is still a precise bug list for a person.

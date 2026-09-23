@@ -1,0 +1,83 @@
+---
+title: Quickstart
+description: Go from an empty repo to a committed, two-endpoint TypeScript client — from the terminal or from a coding agent.
+sidebar:
+  order: 2
+  label: Quickstart
+  badge:
+    text: Start here
+    variant: tip
+---
+
+This is the shortest path that produces a real client. The example selects two Stripe refund operations. Swap in any API the catalog knows.
+
+You need Node.js 20 or newer. Apiweld is one package: the CLI and the MCP server are the same program.
+
+<PackageManagers pkg="apiweld" dev />
+
+<Aside type="note" title="What this does not set up">
+  There is no account to create and no project to provision in a cloud console. `apiweld init` writes files in the repo you are already in.
+</Aside>
+
+## Initialize
+
+<Steps>
+  <Step title="Create the config">
+
+`apiweld init` writes `apiweld.config.ts`, adds `.apiweld/` to `.gitignore`, and leaves the output directory ready. Pass `--agents` to append a short section to `AGENTS.md` or `CLAUDE.md` and to print the MCP config snippet for common agents.
+
+```sh
+npx apiweld init --agents
+```
+
+The agent note tells the model to reach for Apiweld instead of hand-writing `fetch` or installing a full vendor SDK.
+
+  </Step>
+  <Step title="Load the catalog">
+
+`apiweld catalog sync` downloads the prebuilt SQLite snapshot attached to a GitHub release and checks it against the published SHA-256. It is a file, not a service. If you would rather not use that snapshot, `apiweld catalog build` pulls APIs.guru and indexes it on this machine. That path is slower and does not depend on the project's releases.
+
+```sh
+npx apiweld catalog sync
+```
+
+  </Step>
+  <Step title="Find the operation">
+
+Search hits API titles and operation summaries. `--ops` searches endpoints. `show` prints a compact TypeScript-shaped signature instead of a raw OpenAPI blob.
+
+```sh
+npx apiweld search "refund a payment"
+npx apiweld show stripe.com "POST /v1/refunds"
+```
+
+  </Step>
+  <Step title="Weld the client">
+
+`add` records the operations, generates the client, and updates the lock. The config key is the name you will import. The source resolver for a catalog hit is `apisguru:` plus the directory id, and Apiweld prefers the provider's own spec URL when the directory entry records one.
+
+```sh
+npx apiweld add stripe "POST /v1/refunds" "GET /v1/refunds/{refund}"
+```
+
+You should now have `src/apis/stripe/` (or whatever `output` you set), a lock entry, and a config block you can read in review. Commit all three. Generated code is part of the project.
+
+  </Step>
+</Steps>
+
+## What the agent does instead
+
+Register the server once (`apiweld mcp`, stdio, no port). The agent then calls `search_operations`, `describe_operation`, and `add_operations`. Those tools map one-to-one onto the commands above. The tool result includes the import path and an example call, so the agent can wire the client without rereading the spec.
+
+## Generate again without the network
+
+`apiweld generate` rebuilds from the lock and the content-addressed spec cache. Use it in CI when you want to prove the committed client still matches the lock.
+
+```sh
+npx apiweld generate
+npx apiweld verify
+```
+
+`verify` runs the TypeScript compiler against the project's `tsconfig.json`, then an optional test command if you configured one.
+
+Next: the [CLI reference](/cli), or [how drift is classified](/drift) once the client is in use.

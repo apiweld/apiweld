@@ -1,0 +1,56 @@
+---
+title: CLI
+description: Every apiweld command, what it writes, and the flags CI and agents share.
+sidebar:
+  order: 3
+  label: CLI
+---
+
+The CLI is the human and CI door. The [MCP server](/mcp) calls the same core, one tool per command. If you can do it in chat, you can paste the equivalent command into a workflow.
+
+Every command accepts `--json` (stable output for CI and agents) and `--offline` (read `~/.apiweld/` and the lock only; do not fetch).
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `apiweld init [--agents]` | Write `apiweld.config.ts`, gitignore `.apiweld/`, and optionally print agent instructions plus an MCP snippet. |
+| `apiweld catalog sync` | Download the prebuilt catalog snapshot and verify its SHA-256. |
+| `apiweld catalog build` | Rebuild the local index from APIs.guru and any extra sources in settings. |
+| `apiweld search <query> [--ops] [--api id]` | Search APIs, or operations across the catalog or inside one API. |
+| `apiweld show <api> [op]` | Describe an API, or one operation as a compact signature. `--depth n` expands nested types. |
+| `apiweld add <api> <op…>` | Select operations, regenerate, update the lock. Edits the config AST when that is safe. |
+| `apiweld remove <api> <op…>` | Drop operations, shrink the slice, regenerate. |
+| `apiweld generate [api]` | Regenerate from the lock. No network required. |
+| `apiweld update [api]` | Fetch the latest spec, classify drift, regenerate when policy allows. |
+| `apiweld check [api] [--fail-on …]` | Detect drift for selected operations only. |
+| `apiweld heal <api> [--apply]` | Write a heal plan. `--apply` puts the new client in the working tree. |
+| `apiweld verify` | Type-check, then run the optional test command. |
+| `apiweld mcp` | Start the MCP server on stdio. |
+
+Operation arguments are quoted `METHOD path` strings, for example `"POST /v1/refunds"`.
+
+## Check as a CI gate
+
+`apiweld check` exits non-zero when findings at or above the threshold exist. The default threshold is `breaking`. Pass `--fail-on risky` when a nullable field or a deprecation should fail the job too.
+
+```sh
+npx apiweld check --fail-on breaking
+npx apiweld check stripe --json
+```
+
+Reports also land in `.apiweld/reports/` as JSON and Markdown. That directory is gitignored; the lockfile is what you commit.
+
+## When add will not rewrite the config
+
+`add` and `remove` edit `apiweld.config.ts` with magicast so formatting, comments, and patch functions survive. If the file is too dynamic to edit safely — computed keys, or a spread from another module — the command prints the exact snippet to insert and leaves the file alone. Paste it, or let the agent paste it.
+
+## Environment
+
+| Variable | Effect |
+| --- | --- |
+| `APIWELD_OFFLINE=1` | Same as `--offline` for the whole process. |
+| `APIWELD_CACHE_DIR` | Override `~/.apiweld/`. |
+| `APIWELD_ENGINE_PATH` | Use a custom `apiweld-engine` binary instead of the platform package npm installed. |
+
+Global preferences that are not secret (proxy, offline default, extra catalog sources) can also live in `~/.apiweld/settings.json`.

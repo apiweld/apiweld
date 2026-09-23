@@ -1,0 +1,137 @@
+---
+title: Config and lockfile
+description: apiweld.config.ts is what you mean. apiweld.lock.json is what was fetched, sliced, and generated.
+sidebar:
+  order: 5
+  label: Config and lockfile
+---
+
+Two files. You write one. Apiweld writes the other. Both are committed.
+
+## Config
+
+`apiweld.config.ts` is loaded with `c12` and `jiti`, so there is no compile step. `defineConfig` is the typed helper exported by the `apiweld` package.
+
+```ts title="apiweld.config.ts"
+import { defineConfig } from "apiweld";
+
+export default defineConfig({
+  output: "src/apis",
+  generator: {
+    name: "hey-api",
+    client: "fetch",
+    validators: "zod",
+  },
+  apis: {
+    stripe: {
+      source: "apisguru:stripe.com",
+      operations: [
+        "POST /v1/refunds",
+        "GET /v1/refunds/{refund}",
+      ],
+      policy: { autoRegenerate: "safe" },
+    },
+    github: {
+      source: "url:https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json",
+      operations: ["GET /repos/{owner}/{repo}/pulls"],
+    },
+  },
+});
+```
+
+`output` is the directory of generated clients, one folder per API key. `generator.client` is passed through to Hey API (`fetch`, `axios`, `ky`, `ofetch`, `next`, `nuxt`, and the other clients that package supports). `validators: "zod"` turns on the Zod plugin and, later, the [runtime drift log](/drift).
+
+`policy.autoRegenerate` is `"safe"` or `"never"`. `"safe"` lets `apiweld update` regenerate when the only findings are safe. It never regenerates over a breaking finding. See [Drift detection](/drift).
+
+### Sources
+
+| Source | Resolves by |
+| --- | --- |
+| `apisguru:<id>` | The APIs.guru directory entry. When the spec carries `x-origin`, Apiweld fetches the provider's URL so drift is not stuck behind the mirror. |
+| `url:<https://…>` | Any spec URL, including one the directory does not list. |
+| `file:<path>` | A spec on disk. Use this for private or internal APIs. |
+| `wellknown:<domain>` | Later. Probes `https://<domain>/.well-known/api-catalog` (RFC 9727). |
+
+### Patches
+
+Some upstream specs are wrong in ways that block generation. A `patch` function on that API is forwarded to Hey API's `parser.patch`. It lives in your config, which means you wrote it. Specs are never a source of executable code.
+
+```ts
+patch: {
+  schemas: {
+    "pull-request-simple": (schema) => {
+      // repair the upstream schema, then return it
+      return schema;
+    },
+  },
+},
+```
+
+### AST edits
+
+`apiweld add` and `add_operations` change the operations list by editing the TypeScript AST with magicast. Comments and functions stay. If the object is built dynamically and cannot be edited safely, Apiweld prints the snippet and does not write the file.
+
+## Lockfile
+
+`apiweld.lock.json` is machine state. Do not edit it. Keys are sorted. Operations are sorted. A lock diff means a spec, a slice, or a generator changed — not a formatting pass.
+
+```json title="apiweld.lock.json"
+{
+  "lockVersion": 1,
+  "apis": {
+    "stripe": {
+      "resolvedUrl": "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json",
+      "specHash": "sha256:9f2c…e41a",
+      "specVersion": "2026-08-27",
+      "fetchedAt": "2026-09-23T07:40:12Z",
+      "etag": "W/\"5d1f…\"",
+      "operations": ["GET /v1/refunds/{refund}", "POST /v1/refunds"],
+      "sliceHash": "sha256:1b7a…03cd",
+      "schemas": 14,
+      "generator": "@hey-api/openapi-ts@<version>",
+      "engine": "apiweld-engine@<version> (oasdiff <version>)",
+      "outputHash": "sha256:c08e…77b2"
+    }
+  }
+}
+```
+
+Three hashes, three questions:
+
+| Hash | Changes when | What Apiweld does |
+| --- | --- | --- |
+| `specHash` | The provider changed anything in the spec | Re-slice, then compare slice hashes. |
+| `sliceHash` | Something in your selection changed | Run the engine diff and classify. This is the only hash that raises a drift alert. |
+| `outputHash` | Generated files differ from what Apiweld would emit | Warn that a hand-edit will be overwritten on the next generate. |
+
+`resolvedUrl` is the URL actually fetched (often the upstream origin, not the directory mirror). `etag` is sent on the next conditional GET. `generator` and `engine` pin the tools that produced the client, so a regenerate is comparable.
+
+## Layout
+
+```text
+apiweld.config.ts
+apiweld.lock.json
+src/apis/
+  stripe/                 # generated — read it, do not maintain it by hand
+    sdk.gen.ts
+    types.gen.ts
+    zod.gen.ts
+    index.ts
+  github/
+.apiweld/                 # gitignored
+  reports/                # drift reports and heal plans, JSON and Markdown
+  drift.log.jsonl         # runtime response mismatches, shapes only
+```
+
+## Cache
+
+```text
+~/.apiweld/
+  settings.json           # proxy, offline default, extra catalogs
+  catalog.db              # SQLite + FTS5
+  specs/
+    9f2c…e41a.json        # normalized, immutable, named by spec hash
+  http-cache.json         # ETag and Last-Modified per URL
+```
+
+The spec store is content-addressed. The lock pins a hash, so an old version is still on disk for a diff or a reproducible generate after the provider has moved on.

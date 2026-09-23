@@ -1,0 +1,209 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Header from "../components/Header.astro";
+import { LinkButton } from "../components/ui/link-button";
+import { config } from "virtual:nimbus/config";
+import { withBase } from "@cloudflare/nimbus-docs/runtime";
+
+// Prerender explicitly so the homepage stays a static route under
+// `output: "server"` — an adapter alone must add zero on-demand routes.
+export const prerender = true;
+
+const href = (path: string) => withBase(path, import.meta.env.BASE_URL);
+
+const jobs = [
+  {
+    kicker: "01",
+    title: "Discover",
+    body: "Search a local catalog of public APIs and every operation inside them. The index answers “which API refunds a payment?” without loading a spec.",
+  },
+  {
+    kicker: "02",
+    title: "Pick",
+    body: "Choose the operations you will call. Generated code, drift checks, and alerts stay scoped to that slice. Unused endpoints stay out of the repo.",
+  },
+  {
+    kicker: "03",
+    title: "Weld",
+    body: "Hey API writes a typed client into your tree. Optional Zod validators watch live responses. The client is committed, so review and agents read the same files.",
+  },
+  {
+    kicker: "04",
+    title: "Stay in sync",
+    body: "A slice hash tells you when something you use changed. Safe edits can regenerate. Breaking edits become a heal plan and a branch — never an automatic merge.",
+  },
+];
+
+const guarantees = [
+  {
+    title: "Traffic stays boring",
+    body: "The only network calls are HTTP GETs for public specs and the catalog snapshot. Everything also works from the local cache.",
+  },
+  {
+    title: "The agent does the thinking",
+    body: "Apiweld never calls a model. Search, slice, generate, diff, and type-check are deterministic. Your agent edits code through MCP.",
+  },
+  {
+    title: "Git is the database",
+    body: "Project state is a TypeScript config and a JSON lockfile. Every client change is a diff. A build from the lock does not need the network.",
+  },
+];
+
+const docs = [
+  { href: "/principles", title: "Principles", body: "The rules that throw out whole designs." },
+  { href: "/quickstart", title: "Quickstart", body: "From an empty repo to a two-endpoint client." },
+  { href: "/cli", title: "CLI", body: "Commands for humans and CI, including --json." },
+  { href: "/mcp", title: "MCP tools", body: "The stdio server your coding agent calls." },
+  { href: "/config", title: "Config and lockfile", body: "TypeScript for intent, JSON for what was built." },
+  { href: "/drift", title: "Drift detection", body: "Slice hashes, oasdiff, and what actually alerts." },
+  { href: "/heal", title: "Heal loop", body: "Worktree, type-check, plan, then a human merge." },
+  { href: "/architecture", title: "Architecture", body: "Catalog, engine, slicer, and the Hey API adapter." },
+  { href: "/security", title: "Security", body: "Untrusted specs, a network-free engine, local writes." },
+  { href: "/roadmap", title: "Roadmap", body: "Weld, watch, heal, then widen. Each release stands alone." },
+];
+---
+
+<BaseLayout title={config.title} description={config.description}>
+  <div class="flex flex-col min-h-screen">
+    <Header showSidebar={false}>
+      <a slot="actions" href={href("/quickstart")} class="text-sm font-medium text-muted-foreground no-underline hover:text-foreground">
+        Docs
+      </a>
+    </Header>
+
+    <main id="main-content" tabindex="-1" class="flex-1">
+      <section class="mx-auto w-full max-w-6xl px-5 pt-16 pb-12 sm:px-8 sm:pt-24">
+        <p class="text-sm font-medium tracking-wide text-weld">Local-first · no accounts · no telemetry</p>
+        <h1
+          class="mt-4 max-w-3xl text-foreground leading-[1.08]"
+          style="font-size: clamp(2.25rem, 5vw, 3.5rem); font-weight: 600; letter-spacing: -0.035em;"
+        >
+          Discover a public API. Weld a typed client. Keep it in sync.
+        </h1>
+        <p class="mt-5 max-w-2xl text-lg leading-relaxed text-muted-foreground">
+          Apiweld is a local tool for coding agents. It finds public APIs, keeps only the endpoints you call, generates a typed client into the repository, and watches that slice as the upstream spec moves.
+        </p>
+        <div class="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <LinkButton href={href("/quickstart")} variant="primary" icon>Read the quickstart</LinkButton>
+          <LinkButton href={href("/architecture")} variant="secondary">See the architecture</LinkButton>
+        </div>
+        <p class="mt-4 text-sm text-muted-foreground">
+          There is no hosted service. Specs are fetched, cached, and forgotten by the network. State that matters is committed.
+        </p>
+      </section>
+
+      <section class="mx-auto grid w-full max-w-6xl gap-6 px-5 pb-16 sm:px-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-start">
+        <ol class="grid gap-3 sm:grid-cols-2">
+          {
+            jobs.map((job) => (
+              <li class="rounded-xl bg-card p-5 ring ring-border">
+                <p class="font-mono text-xs text-weld">{job.kicker}</p>
+                <h2 class="mt-2 text-base font-semibold text-foreground">{job.title}</h2>
+                <p class="mt-1.5 text-sm leading-relaxed text-muted-foreground">{job.body}</p>
+              </li>
+            ))
+          }
+        </ol>
+
+        <div class="overflow-hidden rounded-xl bg-card ring ring-border">
+          <div class="flex items-center justify-between border-b border-border px-4 py-2.5">
+            <p class="font-mono text-xs text-muted-foreground">apiweld.config.ts</p>
+            <p class="font-mono text-xs text-muted-foreground">committed</p>
+          </div>
+          <pre class="overflow-x-auto p-4 text-[0.8125rem] leading-relaxed text-foreground"><code>{`import { defineConfig } from "apiweld";
+
+export default defineConfig({
+  output: "src/apis",
+  generator: { name: "hey-api", client: "fetch", validators: "zod" },
+  apis: {
+    stripe: {
+      source: "apisguru:stripe.com",
+      operations: [
+        "POST /v1/refunds",
+        "GET /v1/refunds/{refund}",
+      ],
+      policy: { autoRegenerate: "safe" },
+    },
+  },
+});`}</code></pre>
+        </div>
+      </section>
+
+      <section class="border-y border-border bg-card/60">
+        <div class="mx-auto grid w-full max-w-6xl gap-8 px-5 py-14 sm:px-8 md:grid-cols-3">
+          {
+            guarantees.map((item) => (
+              <div>
+                <h2 class="text-base font-semibold text-foreground">{item.title}</h2>
+                <p class="mt-2 text-sm leading-relaxed text-muted-foreground">{item.body}</p>
+              </div>
+            ))
+          }
+        </div>
+      </section>
+
+      <section class="mx-auto w-full max-w-6xl px-5 py-16 sm:px-8">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 class="text-2xl font-semibold tracking-tight text-foreground">What lands in the repo</h2>
+            <p class="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
+              Generated clients are source, not an install artifact. Agents can read them. Reviewers see the diff. <code class="font-mono text-[0.8125rem] text-foreground">outputHash</code> flags hand-edits that the next generate would overwrite.
+            </p>
+          </div>
+          <a href={href("/config")} class="text-sm font-medium text-foreground no-underline hover:underline">Config and lockfile</a>
+        </div>
+        <div class="mt-8 grid gap-6 lg:grid-cols-2">
+          <pre class="overflow-x-auto rounded-xl bg-card p-5 font-mono text-[0.8125rem] leading-7 text-foreground ring ring-border"><code>{`apiweld.config.ts
+apiweld.lock.json
+src/apis/stripe/
+  sdk.gen.ts
+  types.gen.ts
+  zod.gen.ts
+  index.ts
+.apiweld/            # gitignored
+  reports/
+  drift.log.jsonl`}</code></pre>
+          <div class="flex flex-col justify-center gap-4">
+            <p class="text-sm leading-relaxed text-muted-foreground">
+              Machine-wide data — the catalog index and content-addressed specs — lives in <code class="font-mono text-[0.8125rem] text-foreground">~/.apiweld/</code>. Project data lives next to your code.
+            </p>
+            <p class="text-sm leading-relaxed text-muted-foreground">
+              One npm package, two doors: <code class="font-mono text-[0.8125rem] text-foreground">apiweld</code> for people and CI, <code class="font-mono text-[0.8125rem] text-foreground">apiweld mcp</code> for agents. Both call the same core. A Go sidecar, <code class="font-mono text-[0.8125rem] text-foreground">apiweld-engine</code>, loads, normalizes, and diffs specs with oasdiff. It never opens a socket.
+            </p>
+            <a href={href("/architecture")} class="text-sm font-medium text-foreground no-underline hover:underline">How the pieces fit</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="mx-auto w-full max-w-6xl px-5 pb-20 sm:px-8">
+        <h2 class="text-2xl font-semibold tracking-tight text-foreground">Documentation</h2>
+        <p class="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+          Written for the person wiring an agent and for the agent reading <code class="font-mono text-[0.8125rem] text-foreground">/llms.txt</code>. Every page has a Markdown alternate.
+        </p>
+        <ul class="mt-8 grid gap-3 sm:grid-cols-2">
+          {
+            docs.map((page) => (
+              <li>
+                <a href={href(page.href)} class="block h-full rounded-xl bg-card p-5 no-underline ring ring-border transition-colors hover:ring-border-strong">
+                  <span class="font-medium text-foreground">{page.title}</span>
+                  <span class="mt-1 block text-sm text-muted-foreground">{page.body}</span>
+                </a>
+              </li>
+            ))
+          }
+        </ul>
+      </section>
+    </main>
+
+    <footer class="border-t border-border">
+      <div class="mx-auto flex w-full max-w-6xl flex-col gap-3 px-5 py-8 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-8">
+        <p>Apiweld. Apache-2.0. Generation by Hey API. Diffs by oasdiff.</p>
+        <nav aria-label="Footer" class="flex flex-wrap gap-x-4 gap-y-2">
+          <a href={href("/principles")} class="no-underline hover:text-foreground">Principles</a>
+          <a href={href("/security")} class="no-underline hover:text-foreground">Security</a>
+          <a href={href("/roadmap")} class="no-underline hover:text-foreground">Roadmap</a>
+        </nav>
+      </div>
+    </footer>
+  </div>
+</BaseLayout>
