@@ -24,43 +24,51 @@ You need Node.js 20 or newer. Apiweld is one package: the CLI and the MCP server
 <Steps>
   <Step title="Create the config">
 
-`apiweld init` writes `apiweld.config.ts`, adds `.apiweld/` to `.gitignore`, and leaves the output directory ready. Pass `--agents` to append a short section to `AGENTS.md` or `CLAUDE.md` and to print the MCP config snippet for common agents.
+`apiweld init` writes `apiweld.config.ts` and adds `.apiweld/` to `.gitignore`. Pass `--agents` to append a short section to `AGENTS.md` or `CLAUDE.md` and to print the MCP config snippet for common agents.
+
+In a workspace — a `package.json` `workspaces` field, or `pnpm-workspace.yaml` — `init` lists the packages and asks where generated clients should go. Press Enter to keep `src/apis`, or pass `--output` to skip the prompt. The path is relative to the directory you run `init` in. Outside a workspace, `init` writes `output: "src/apis"` without asking.
+
+`bun run` and `npm run` execute scripts from the package root, so a script started in a package still writes the config there. Point `--cwd` at the package when the config should live next to that app:
 
 ```sh
 npx apiweld init --agents
+npx apiweld init --output packages/web/src/apis
 ```
 
 The agent note tells the model to reach for Apiweld instead of hand-writing `fetch` or installing a full vendor SDK.
 
   </Step>
-  <Step title="Load the catalog">
+  <Step title="Add the provider">
 
-`apiweld catalog sync` downloads the prebuilt SQLite snapshot attached to a GitHub release and checks it against the published SHA-256. It is a file, not a service. If you would rather not use that snapshot, `apiweld catalog build` pulls APIs.guru and indexes it on this machine. That path is slower and does not depend on the project's releases.
+Index one spec when you need it. `catalog add` fetches that OpenAPI document, stores it in the local catalog, and leaves every other provider alone. A GitHub `blob` URL is fetched as the raw file.
 
 ```sh
-npx apiweld catalog sync
+npx apiweld catalog add stripe https://github.com/stripe/openapi/blob/master/latest/openapi.spec3.json
 ```
+
+`catalog sync` still downloads the prebuilt snapshot from a GitHub release and checks its SHA-256. `catalog build` indexes APIs.guru on this machine. That full build is the slow path. Agents should add the providers a repo actually calls.
 
   </Step>
   <Step title="Find the operation">
 
-Search hits API titles and operation summaries. `--ops` searches endpoints. `show` prints a compact TypeScript-shaped signature instead of a raw OpenAPI blob.
+Search hits API titles and operation summaries. `--ops` searches endpoints. `show` prints a compact TypeScript-shaped signature instead of a raw OpenAPI blob. Pass an operation id or `METHOD /path`.
 
 ```sh
-npx apiweld search "refund a payment"
-npx apiweld show stripe.com "POST /v1/refunds"
+npx apiweld search "refund a payment" --ops
+npx apiweld show stripe PostRefunds
 ```
 
   </Step>
   <Step title="Weld the client">
 
-`add` records the operations, generates the client, and updates the lock. The config key is the name you will import. The source resolver for a catalog hit is `apisguru:` plus the directory id, and Apiweld prefers the provider's own spec URL when the directory entry records one.
+`add` records the operations, generates the client, and updates the lock. An operation id and its `METHOD /path` select the same call. The config and the lockfile store `METHOD /path`. The config key is the name you will import. If that provider is already in the catalog, you can omit `--source`.
 
 ```sh
+npx apiweld add stripe PostRefunds GetRefundsRefund
 npx apiweld add stripe "POST /v1/refunds" "GET /v1/refunds/{refund}"
 ```
 
-You should now have `src/apis/stripe/` (or whatever `output` you set), a lock entry, and a config block you can read in review. Commit all three. Generated code is part of the project.
+You should now have a client under the configured `output` directory (default `src/apis/stripe/`), a lock entry, and a config block you can read in review. Commit all three. Generated code is part of the project.
 
   </Step>
 </Steps>

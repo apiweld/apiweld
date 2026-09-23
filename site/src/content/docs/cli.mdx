@@ -14,9 +14,10 @@ Every command accepts `--json` (stable output for CI and agents) and `--offline`
 
 | Command | What it does |
 | --- | --- |
-| `apiweld init [--agents]` | Write `apiweld.config.ts`, gitignore `.apiweld/`, and optionally print agent instructions plus an MCP snippet. |
+| `apiweld init [--agents] [--output dir]` | Write `apiweld.config.ts` and gitignore `.apiweld/`. In a workspace, ask for the output directory. `--agents` also writes agent instructions and an MCP snippet. |
+| `apiweld catalog add <id> <url>` | Fetch one provider spec and index its operations. Does not replace the rest of the catalog. |
 | `apiweld catalog sync` | Download the prebuilt catalog snapshot and verify its SHA-256. |
-| `apiweld catalog build` | Rebuild the local index from APIs.guru and any extra sources in settings. |
+| `apiweld catalog build` | Rebuild the whole local index from APIs.guru and any extra sources in settings. Slow. Prefer `catalog add` for the providers you use. |
 | `apiweld search <query> [--ops] [--api id]` | Search APIs, or operations across the catalog or inside one API. |
 | `apiweld show <api> [op]` | Describe an API, or one operation as a compact signature. `--depth n` expands nested types. |
 | `apiweld add <api> <op…>` | Select operations, regenerate, update the lock. Edits the config AST when that is safe. |
@@ -28,7 +29,9 @@ Every command accepts `--json` (stable output for CI and agents) and `--offline`
 | `apiweld verify` | Type-check, then run the optional test command. |
 | `apiweld mcp` | Start the MCP server on stdio. |
 
-Operation arguments are quoted `METHOD path` strings, for example `"POST /v1/refunds"`.
+An operation is an operation id (`PostRefunds`) or a quoted `METHOD /path` (`"POST /v1/refunds"`). Both select the same call. The config and the lockfile store `METHOD /path`.
+
+With no arguments, `help`, or `--help`, the CLI prints the command list. `apiweld <command> --help` prints that command.
 
 ## Check as a CI gate
 

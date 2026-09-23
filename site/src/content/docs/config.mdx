@@ -32,14 +32,16 @@ export default defineConfig({
       policy: { autoRegenerate: "safe" },
     },
     github: {
-      source: "url:https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json",
+      source: "https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json",
       operations: ["GET /repos/{owner}/{repo}/pulls"],
     },
   },
 });
 ```
 
-`output` is the directory of generated clients, one folder per API key. `generator.client` is passed through to Hey API (`fetch`, `axios`, `ky`, `ofetch`, `next`, `nuxt`, and the other clients that package supports). `validators: "zod"` turns on the Zod plugin and, later, the [runtime drift log](/drift).
+`output` is the directory of generated clients, one folder per API key, relative to the config file. The default is `src/apis`. In a workspace, `apiweld init` asks for this path. `generator.client` is passed through to Hey API (`fetch`, `axios`, `ky`, `ofetch`, `next`, `nuxt`, and the other clients that package supports). `validators: "zod"` turns on the Zod plugin and, later, the [runtime drift log](/drift).
+
+Optional fields (`patch`, `levelOverrides`, `allowRemoteHosts`) are omitted when they are unset. `add` does not write `undefined` into the file.
 
 `policy.autoRegenerate` is `"safe"` or `"never"`. `"safe"` lets `apiweld update` regenerate when the only findings are safe. It never regenerates over a breaking finding. See [Drift detection](/drift).
 
@@ -47,10 +49,12 @@ export default defineConfig({
 
 | Source | Resolves by |
 | --- | --- |
+| `https://…` | A spec URL. Stored as the URL itself, with no `url:` prefix. A GitHub `blob` page is fetched as the raw file. |
+| `file:<path>` | A spec on disk. This is the only prefixed form for a local file. Use it for private or internal APIs. |
 | `apisguru:<id>` | The APIs.guru directory entry. When the spec carries `x-origin`, Apiweld fetches the provider's URL so drift is not stuck behind the mirror. |
-| `url:<https://…>` | Any spec URL, including one the directory does not list. |
-| `file:<path>` | A spec on disk. Use this for private or internal APIs. |
 | `wellknown:<domain>` | Later. Probes `https://<domain>/.well-known/api-catalog` (RFC 9727). |
+
+An operation in the `operations` array is stored as `METHOD /path`. You can pass an operation id to `add`, `remove`, and `show`. Apiweld resolves it against the spec and writes the method and path.
 
 ### Patches
 

@@ -21,12 +21,12 @@ From this repo:
 bun run apiweld init
 bun run apiweld catalog add stripe https://github.com/stripe/openapi/blob/master/latest/openapi.spec3.json
 bun run apiweld search "refund a payment" --ops --json
-bun run apiweld add stripe "POST /v1/refunds" "GET /v1/refunds/{refund}" --source file:fixtures/history/stripe/v1.json
+bun run apiweld add stripe PostRefunds "GET /v1/refunds/{refund}"
 ```
 
-`init` writes `apiweld.config.ts` and ignores `.apiweld/`. `add` edits the config, slices the spec, generates a Hey API client under `src/apis/`, and writes `apiweld.lock.json`.
+`init` writes `apiweld.config.ts` and ignores `.apiweld/`. In a workspace it asks for the output directory. `catalog add` indexes one provider spec. `add` accepts an operation id or `METHOD /path`, stores `METHOD /path`, slices the spec, generates a Hey API client under the configured `output` (default `src/apis/`), and writes `apiweld.lock.json`. Spec URLs are stored without a `url:` prefix. Local specs use `file:`.
 
-Other commands: `catalog sync`, `show`, `remove`, `generate`, `update`, `check`, `heal`, `verify`, `mcp`. Every command accepts `--json` and `--offline`.
+Other commands: `catalog sync`, `catalog build`, `show`, `remove`, `generate`, `update`, `check`, `heal`, `verify`, `mcp`. Every command accepts `--json` and `--offline`. `catalog build` indexes APIs.guru and is the slow path.
 
 Start the MCP server for an agent:
 
@@ -57,4 +57,6 @@ Tests use the specs in `fixtures/` and do not call the network.
 | `engine/` | Go sidecar wrapping oasdiff and kin-openapi |
 | `npm/engine-*` | Per-platform binary packages filled by the release workflow |
 | `catalog/` | Curated upstream URLs and the weekly snapshot job |
+| `site/` | Documentation site |
+| `examples/` | Generated clients from the sample config |
 | `action/` | GitHub Action that checks drift and opens a heal pull request |

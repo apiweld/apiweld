@@ -15,7 +15,7 @@ developer / CI ──▶ apiweld CLI ┘         │                 │
                                          ▼                 ▼
                                apiweld.config.ts     ~/.apiweld/
                                apiweld.lock.json       catalog.db
-                               src/apis/*              specs/<sha256>.json
+                               <output>/*              specs/<sha256>.json
 ```
 
 The engine's protocol is one JSON request on stdin and one JSON response on stdout. A non-zero exit is an engine error. It is stateless. The TypeScript side fetches. The engine only reads files it is given.
@@ -24,7 +24,7 @@ The engine's protocol is one JSON request on stdin and one JSON response on stdo
 
 A SQLite database with FTS5 over APIs and every operation. Seeded from APIs.guru plus any sources you add. It answers endpoint questions in milliseconds so search does not parse specs.
 
-The default snapshot is rebuilt weekly by the project's GitHub Action and attached to a release. `catalog sync` checks the published checksum before replacing `catalog.db`. `catalog build` does the same indexing locally. Extra sources in `~/.apiweld/settings.json` — a folder of internal specs, a list of URLs — are indexed beside the public set and tagged with their source.
+`catalog add <id> <url>` indexes one provider spec and leaves the rest of the catalog in place. That is how an agent adds a provider when a repo starts calling it. The default snapshot is still rebuilt weekly by the project's GitHub Action and attached to a release. `catalog sync` checks the published checksum before replacing `catalog.db`. `catalog build` indexes APIs.guru locally, and it is the slow path. Extra sources in `~/.apiweld/settings.json` — a folder of internal specs, a list of URLs — are indexed beside the public set and tagged with their source.
 
 Directory entries go stale. Search results include when the spec last changed, so an agent can prefer a maintained API. A small `upstreams.json` in the Apiweld repo holds verified origin URLs for widely used APIs, and resolvers follow `x-origin` when the directory recorded one.
 
@@ -80,4 +80,4 @@ The impact analyzer regenerates into a worktree and runs the TypeScript compiler
 
 ## Repository, when you are building Apiweld itself
 
-The published package is a workspace: `core`, `cli`, `mcp`, `gen-heyapi`, and an umbrella `apiweld` package. `engine/` is the Go module. Per-platform binary packages are generated at release. `catalog/` holds the snapshot job and `upstreams.json`. `fixtures/` holds real spec pairs for tests. This documentation site lives in `site/` and is a separate change from the tool.
+The repo is a Bun workspace: `core`, `cli`, `mcp`, `gen-heyapi`, `gen-oapi`, and an umbrella `apiweld` package. `engine/` is the Go module. Per-platform binary packages are generated at release. `catalog/` holds the snapshot job and `upstreams.json`. `fixtures/` holds real spec pairs for tests. This documentation site lives in `site/`. Install and build the tool with `bun install` and `bun run engine:build`.

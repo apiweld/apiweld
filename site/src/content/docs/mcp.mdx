@@ -16,8 +16,8 @@ Each tool is one CLI command. Anything the agent does, you can rerun from a shel
 | --- | --- | --- |
 | `search_apis` | `apiweld search <query>` | Ranked APIs: one-line description, auth style, and how fresh the spec is. |
 | `search_operations` | `apiweld search --ops <query> [--api id]` | Matching endpoints, across the catalog or inside one API. |
-| `describe_operation` | `apiweld show <api> "<METHOD path>"` | A compact signature shaped like the call the agent will write. |
-| `add_operations` | `apiweld add <api> "<op>"…` | Updates config, generates the client, returns the import path and an example call. |
+| `describe_operation` | `apiweld show <api> <operationId or "METHOD path">` | A compact signature shaped like the call the agent will write. |
+| `add_operations` | `apiweld add <api> <op>…` | Updates config, generates the client, returns the import path and an example call. An operation id and `METHOD /path` select the same call. |
 | `remove_operations` | `apiweld remove <api> "<op>"…` | Shrinks the slice and regenerates. |
 | `check_drift` | `apiweld check [api]` | Findings for selected operations only, already classified. |
 | `get_heal_plan` | `apiweld heal <api>` | Findings, affected call sites, and suggested edits. |

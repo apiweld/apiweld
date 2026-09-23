@@ -22,11 +22,11 @@ Engine binaries are produced in GitHub Actions with goreleaser. Published SHA-25
 
 ## The catalog snapshot is a file with a checksum
 
-`apiweld catalog sync` refuses a snapshot whose bytes do not match the published digest. Building the index yourself (`catalog build`) skips that file entirely and talks to APIs.guru directly.
+`apiweld catalog sync` refuses a snapshot whose bytes do not match the published digest. `catalog add` fetches only the spec URL you named. `catalog build` skips the snapshot and talks to APIs.guru directly.
 
 ## Generated clients are plain TypeScript
 
-Output is source files. There is no postinstall script in the generated tree, and nothing in `src/apis/` is executed because it was generated. Commit it, read it, delete an API by removing it from the config and regenerating.
+Output is source files under the configured `output` directory. There is no postinstall script in the generated tree, and nothing there is executed because it was generated. Commit it, read it, delete an API by removing it from the config and regenerating.
 
 ## The MCP server is not a network service
 

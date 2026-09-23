@@ -117,7 +117,7 @@ export default defineConfig({
   generator: { name: "hey-api", client: "fetch", validators: "zod" },
   apis: {
     stripe: {
-      source: "apisguru:stripe.com",
+      source: "https://raw.githubusercontent.com/stripe/openapi/master/latest/openapi.spec3.json",
       operations: [
         "POST /v1/refunds",
         "GET /v1/refunds/{refund}",
