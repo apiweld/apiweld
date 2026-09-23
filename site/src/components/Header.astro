@@ -41,10 +41,15 @@ const resolveSectionHref = (href: string): string =>
   <div class="mx-auto flex items-center justify-between gap-3 h-14 px-4 lg:px-6">
     <div class="flex items-center gap-3 min-w-0">
       <slot name="brand">
-        <a href={homeHref} class="group shrink-0">
-          <span class="font-semibold text-sm text-foreground group-hover:text-primary transition-colors">
-            {config.title}
-          </span>
+        <a href={homeHref} class="flex shrink-0 items-center rounded-sm bg-white px-1" aria-label="API Weld home">
+          <img
+            src={withBase("/apiweld-logo-horizontal.png", import.meta.env.BASE_URL)}
+            alt="API Weld"
+            width="1997"
+            height="788"
+            class="block h-auto w-28 sm:w-32"
+            decoding="async"
+          />
         </a>
       </slot>
 
