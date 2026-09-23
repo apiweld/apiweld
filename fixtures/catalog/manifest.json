@@ -1,0 +1,18 @@
+{
+  "apis": [
+    {
+      "id": "stripe.com",
+      "provider": "stripe.com",
+      "service": "payments",
+      "spec": "../history/stripe/v1.json",
+      "source": "file:../history/stripe/v1.json"
+    },
+    {
+      "id": "pets.com",
+      "provider": "pets.com",
+      "service": "pets",
+      "spec": "../history/pets/v1.json",
+      "source": "file:../history/pets/v1.json"
+    }
+  ]
+}

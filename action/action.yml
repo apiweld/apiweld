@@ -1,0 +1,106 @@
+name: Apiweld
+description: Check welded API clients and open a pull request when selected operations drift.
+
+inputs:
+  fail-on:
+    description: Change class that fails the check. breaking or risky.
+    required: false
+    default: breaking
+  api:
+    description: Limit the check and heal to one API name from apiweld.config.ts.
+    required: false
+    default: ""
+  command:
+    description: Apiweld executable. Defaults to npx apiweld for published installs.
+    required: false
+    default: npx --yes apiweld
+  token:
+    description: Token with permission to push the heal branch and open the pull request.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  drift:
+    description: true when selected operations changed.
+    value: ${{ steps.decide.outputs.drift }}
+
+runs:
+  using: composite
+  steps:
+    - name: Check for drift
+      id: check
+      shell: bash
+      env:
+        APIWELD_COMMAND: ${{ inputs.command }}
+        APIWELD_API: ${{ inputs.api }}
+        APIWELD_FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        set -euo pipefail
+        report="${RUNNER_TEMP}/apiweld-check.json"
+        set +e
+        # shellcheck disable=SC2086
+        $APIWELD_COMMAND check --json --fail-on "$APIWELD_FAIL_ON" ${APIWELD_API:+"$APIWELD_API"} > "$report"
+        code=$?
+        set -e
+        echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+        echo "report=$report" >> "$GITHUB_OUTPUT"
+
+    - name: Decide whether to heal
+      id: decide
+      shell: bash
+      env:
+        REPORT: ${{ steps.check.outputs.report }}
+        EXIT_CODE: ${{ steps.check.outputs.exit_code }}
+      run: |
+        set -euo pipefail
+        node --input-type=module -e '
+          import fs from "node:fs";
+          const raw = fs.readFileSync(process.env.REPORT, "utf8").trim();
+          if (!raw) {
+            console.error("apiweld check produced no JSON");
+            process.exit(1);
+          }
+          const result = JSON.parse(raw);
+          if (result.ok === false) {
+            console.error(result.error || "apiweld check failed");
+            process.exit(1);
+          }
+          const drifted = (result.apis || []).filter((api) => api.drift).map((api) => api.api);
+          const github = process.env.GITHUB_OUTPUT;
+          fs.appendFileSync(github, `drift=${drifted.length ? "true" : "false"}\n`);
+          fs.appendFileSync(github, `apis=${drifted.join(" ")}\n`);
+          if (process.env.EXIT_CODE !== "0" && !result.fail) process.exit(Number(process.env.EXIT_CODE));
+        '
+
+    - name: Open a heal pull request
+      if: steps.decide.outputs.drift == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        APIWELD_COMMAND: ${{ inputs.command }}
+        APIS: ${{ steps.decide.outputs.apis }}
+      run: |
+        set -euo pipefail
+        branch="apiweld/heal-$(date -u +%Y%m%d)"
+        git config user.name "apiweld"
+        git config user.email "apiweld@users.noreply.github.com"
+        git checkout -B "$branch"
+        body=$'Apiweld found drift in the selected operations.\n\n'
+        for api in $APIS; do
+          # shellcheck disable=SC2086
+          $APIWELD_COMMAND heal "$api" --apply --json > "${RUNNER_TEMP}/heal-${api}.json"
+          plan=$(ls -1 .apiweld/reports/"${api}"-*-heal.md 2>/dev/null | tail -n 1 || true)
+          if [ -n "$plan" ]; then
+            body+=$'\n## '"$api"$'\n\n'
+            body+="$(cat "$plan")"$'\n'
+          fi
+        done
+        git add -A
+        git reset -- .apiweld >/dev/null 2>&1 || true
+        if git diff --cached --quiet; then
+          echo "Heal produced no committed changes."
+          exit 0
+        fi
+        git commit -m "fix: heal drifted API clients"
+        git push --force-with-lease -u origin "$branch"
+        gh pr create --title "fix: heal drifted API clients" --body "$body" || gh pr edit "$branch" --body "$body"

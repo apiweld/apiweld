@@ -1,0 +1,16 @@
+{
+  "name": "@apiweld/cli",
+  "version": "0.4.0",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/main.ts"
+  },
+  "dependencies": {
+    "@apiweld/core": "workspace:*",
+    "@apiweld/gen-heyapi": "workspace:*",
+    "@apiweld/gen-oapi": "workspace:*",
+    "@apiweld/mcp": "workspace:*",
+    "citty": "^0.1.6"
+  }
+}

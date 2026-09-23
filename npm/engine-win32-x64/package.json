@@ -1,0 +1,18 @@
+{
+  "name": "@apiweld/engine-win32-x64",
+  "version": "0.4.0",
+  "license": "Apache-2.0",
+  "description": "Prebuilt apiweld-engine binary. Populated by the release workflow.",
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin"
+  ],
+  "bin": {
+    "apiweld-engine": "./bin/apiweld-engine.exe"
+  }
+}

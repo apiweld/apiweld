@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.apiweld/
+engine/bin/
+npm/*/bin/
+coverage/
+.tmp/
+*.log
+.DS_Store
+catalog/*.db
+catalog/*.sha256
