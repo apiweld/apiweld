@@ -1,0 +1,33 @@
+name: catalog
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: engine/go.mod
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm engine:build
+      - name: Build the catalog snapshot
+        run: node catalog/build/snapshot.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catalog-snapshot
+          path: |
+            catalog/snapshot.db
+            catalog/snapshot.sha256
+          if-no-files-found: error

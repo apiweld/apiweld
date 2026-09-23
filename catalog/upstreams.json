@@ -1,0 +1,22 @@
+{
+  "github.com": {
+    "specUrl": "https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json",
+    "title": "GitHub REST API"
+  },
+  "openai.com": {
+    "specUrl": "https://raw.githubusercontent.com/openai/openai-openapi/master/openapi.yaml",
+    "title": "OpenAI API"
+  },
+  "slack.com": {
+    "specUrl": "https://raw.githubusercontent.com/slackapi/slack-api-specs/master/web-api/slack_web_openapi_v2.json",
+    "title": "Slack Web API"
+  },
+  "stripe.com": {
+    "specUrl": "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json",
+    "title": "Stripe API"
+  },
+  "twilio.com": {
+    "specUrl": "https://raw.githubusercontent.com/twilio/twilio-oai/main/spec/json/twilio_api_v2010.json",
+    "title": "Twilio API"
+  }
+}
