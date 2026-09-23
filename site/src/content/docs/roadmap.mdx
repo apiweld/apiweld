@@ -1,0 +1,49 @@
+---
+title: Roadmap
+description: Four releases. Each one is usable on its own, and each one has a concrete "done when."
+sidebar:
+  order: 10
+  label: Roadmap
+---
+
+Versions ship in order, and you can stop after any of them. Later work does not reopen the decisions below.
+
+## v0.1 — Weld
+
+The engine normalizes specs and lists operations. Platform packages and the release pipeline exist. Catalog sync and local build work, and search works against that index. The slicer, spec store, and lockfile exist. `init`, `search`, `show`, `add`, `remove`, and `generate` drive Hey API. Config edits go through magicast when the AST allows it.
+
+MCP in this release: `search_apis`, `search_operations`, `describe_operation`, `add_operations`, `remove_operations`.
+
+**Done when** an agent can go from "I need to create a Stripe refund" to a typed, committed, two-endpoint client without leaving the chat.
+
+## v0.2 — Watch
+
+The engine grows `breaking` and `changelog`. `check` does the conditional fetch, the slice-hash short circuit, finding filters, and `--fail-on`. Reports are JSON and Markdown. `update` honors `autoRegenerate: "safe"`. MCP gains `check_drift`.
+
+**Done when** replaying a real Stripe or GitHub spec history against a fixture project reports exactly the changes that affect the selected operations, and nothing else.
+
+## v0.3 — Heal
+
+Worktree regeneration, the TypeScript impact analyzer, heal plans in JSON and Markdown, `heal --apply`, and `verify`. MCP gains `get_heal_plan` and `verify`. A GitHub Action template runs a scheduled check and opens a branch plus a pull request in the user's repository.
+
+**Done when** a breaking fixture produces a plan whose call sites match the compiler errors, and an agent can edit them until `verify` is green.
+
+## v0.4 — Widen
+
+Report-only Zod validation and `drift.log.jsonl`. The RFC 9727 well-known catalog resolver. Custom catalogs in `settings.json`. A second generator (Python via openapi-python-client, or Go via oapi-codegen). Typed operation ids in `defineConfig` for APIs already in the lock, so the editor can autocomplete `METHOD path`.
+
+## Decisions already made
+
+These are closed. Implementations should follow them.
+
+1. **Native engine binaries for v0.1.** A WASI build may be spiked while watch is underway. It is not the artifact users install first.
+2. **Diff the full spec, then filter findings** to the selected operations, so shared-schema changes keep oasdiff's attribution. Pre-slicing is a fallback if one spec is too large, not the default.
+3. **Commit generated code.** It is reviewable and readable by agents. `outputHash` catches hand-edits. Generating only on install is not the model.
+4. **Compact signatures by default.** `describe_operation` and `apiweld show` expand nested types only when asked (`--depth`).
+5. **magicast when the edit is safe.** If the config is dynamic, print the snippet and let the agent or the human apply it. Do not guess.
+
+## Where this sits
+
+APIs.guru is the seed catalog (CC0); Apiweld resolves to upstream when `x-origin` is present. Hey API generates code — their hosted product is for API owners publishing specs, and Apiweld is the consumer side for third-party APIs. oasdiff is the diff library. Hosted migration products and runtime tool-calling gateways solve adjacent problems: they are not a local catalog plus a committed client.
+
+The loop this project is for: discover, pick endpoints, generate a slim typed client, and keep that client healthy, on the machine where the code already lives.
