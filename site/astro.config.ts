@@ -9,11 +9,11 @@ const nimbusConfig = defineNimbusConfig({
   site: "https://apiweld.dev",
   title: "Apiweld",
   description:
-    "A local-first tool for coding agents to discover public APIs, weld a typed client from the endpoints you use, and keep that client in sync.",
+    "Like shadcn/ui, but for APIs. Add typed clients for just the endpoints you call to your repo, and find out which lines break when the provider changes them.",
   locale: "en",
   homeLabel: "Apiweld",
   github: null,
-  socialImageAlt: "Apiweld — local-first typed clients for coding agents",
+  socialImageAlt: "Apiweld: like shadcn/ui, but for APIs",
 });
 
 export default defineConfig({

@@ -11,56 +11,83 @@ export const prerender = true;
 
 const href = (path: string) => withBase(path, import.meta.env.BASE_URL);
 
-const jobs = [
+const problems = [
   {
-    kicker: "01",
-    title: "Discover",
-    body: "Search a local catalog of public APIs and every operation inside them. The index answers “which API refunds a payment?” without loading a spec.",
+    title: "The agent writes fetch from memory",
+    body: "Field names come from training data, not the current spec. Nothing is typed, so a renamed field or a missing parameter shows up in production, not in the editor.",
   },
   {
-    kicker: "02",
-    title: "Pick",
-    body: "Choose the operations you will call. Generated code, drift checks, and alerts stay scoped to that slice. Unused endpoints stay out of the repo.",
+    title: "The vendor SDK is the whole API",
+    body: "You install hundreds of endpoints to call three. Many APIs have no TypeScript SDK, or one that trails the spec by months. And the SDK is a dependency you can't read or change.",
   },
   {
-    kicker: "03",
-    title: "Weld",
-    body: "Hey API writes a typed client into your tree. Optional Zod validators watch live responses. The client is committed, so review and agents read the same files.",
-  },
-  {
-    kicker: "04",
-    title: "Stay in sync",
-    body: "A slice hash tells you when something you use changed. Safe edits can regenerate. Breaking edits become a heal plan and a branch — never an automatic merge.",
+    title: "Nobody tells you when the API moves",
+    body: "Providers rename fields, tighten enums, and drop endpoints. A version bump or a changelog tells you something changed. It doesn't tell you which lines of your code break.",
   },
 ];
 
-const guarantees = [
+const steps = [
   {
-    title: "Traffic stays boring",
-    body: "The only network calls are HTTP GETs for public specs and the catalog snapshot. Everything also works from the local cache.",
+    kicker: "01",
+    title: "Find the endpoint",
+    body: "Search every operation in the catalog by what it does. “Refund a payment” returns Stripe's POST /v1/refunds. The agent sees a short TypeScript signature, not the full spec.",
   },
   {
-    title: "The agent does the thinking",
-    body: "Apiweld never calls a model. Search, slice, generate, diff, and type-check are deterministic. Your agent edits code through MCP.",
+    kicker: "02",
+    title: "Add only what you call",
+    body: "apiweld add writes a typed client for the endpoints you picked into src/apis/. It's plain TypeScript you commit, read, and review. There's no runtime dependency on Apiweld.",
+  },
+  {
+    kicker: "03",
+    title: "Know when it changes",
+    body: "apiweld check diffs the upstream spec against your lock. It only reports changes to the endpoints you use, and it sorts each one into breaking, risky, or safe.",
+  },
+  {
+    kicker: "04",
+    title: "Fix it with the compiler",
+    body: "Breaking changes get a heal plan: the new client goes into a separate worktree, tsc finds the call sites that break, and your agent fixes them. You review the branch and merge it yourself.",
+  },
+];
+
+const comparison = {
+  columns: ["Hand-written fetch", "Vendor SDK", "Full OpenAPI codegen", "Apiweld"],
+  rows: [
+    { label: "Typed against the current spec", values: ["no", "usually", "yes", "yes"] },
+    { label: "Only the endpoints you call", values: ["yes", "no", "no", "yes"] },
+    { label: "Code lives in your repo", values: ["yes", "no", "yes", "yes"] },
+    { label: "Works when there's no SDK", values: ["yes", "no", "yes", "yes"] },
+    { label: "Your agent can search for the endpoint", values: ["no", "no", "no", "yes"] },
+    { label: "Tells you which call sites a change breaks", values: ["no", "no", "no", "yes"] },
+  ],
+};
+
+const guarantees = [
+  {
+    title: "Runs on your machine",
+    body: "No accounts, no hosted service, no telemetry. The only network calls are GETs for public specs. Everything works offline from the cache.",
+  },
+  {
+    title: "Your agent does the thinking",
+    body: "Apiweld never calls an LLM. Search, generate, diff, and type-check are deterministic. Claude Code, Cursor, or any MCP client calls the same commands you do.",
   },
   {
     title: "Git is the database",
-    body: "Project state is a TypeScript config and a JSON lockfile. Every client change is a diff. A build from the lock does not need the network.",
+    body: "A TypeScript config says what you want. A JSON lockfile pins what was built. Every change to a client is a diff you can review.",
   },
 ];
 
 const docs = [
-  { href: "/principles", title: "Principles", body: "The rules that throw out whole designs." },
   { href: "/quickstart", title: "Quickstart", body: "From an empty repo to a two-endpoint client." },
-  { href: "/cli", title: "CLI", body: "Commands for humans and CI, including --json." },
-  { href: "/mcp", title: "MCP tools", body: "The stdio server your coding agent calls." },
-  { href: "/config", title: "Config and lockfile", body: "TypeScript for intent, JSON for what was built." },
-  { href: "/drift", title: "Drift detection", body: "Slice hashes, oasdiff, and what actually alerts." },
-  { href: "/heal", title: "Heal loop", body: "Worktree, type-check, plan, then a human merge." },
+  { href: "/mcp", title: "MCP tools", body: "Let your coding agent search, add, and heal." },
+  { href: "/drift", title: "Drift detection", body: "What counts as breaking, and what stays quiet." },
+  { href: "/heal", title: "Heal loop", body: "From a breaking change to a green type-check." },
+  { href: "/cli", title: "CLI", body: "Every command, with --json for scripts and CI." },
+  { href: "/config", title: "Config and lockfile", body: "TypeScript for what you want, JSON for what was built." },
+  { href: "/principles", title: "Principles", body: "The rules behind the design." },
   { href: "/architecture", title: "Architecture", body: "Catalog, engine, slicer, and the Hey API adapter." },
-  { href: "/security", title: "Security", body: "Untrusted specs, a network-free engine, local writes." },
-  { href: "/roadmap", title: "Roadmap", body: "Weld, watch, heal, then widen. Each release stands alone." },
 ];
+
+const code = "font-mono text-[0.8125rem] text-foreground";
 ---
 
 <BaseLayout title={config.title} description={config.description}>
@@ -73,37 +100,38 @@ const docs = [
 
     <main id="main-content" tabindex="-1" class="flex-1">
       <section class="mx-auto w-full max-w-6xl px-5 pt-16 pb-12 sm:px-8 sm:pt-24">
-        <p class="text-sm font-medium tracking-wide text-weld">Local-first · no accounts · no telemetry</p>
+        <p class="text-sm font-medium tracking-wide text-weld">Open source · runs locally · built for coding agents</p>
         <h1
           class="mt-4 max-w-3xl text-foreground leading-[1.08]"
           style="font-size: clamp(2.25rem, 5vw, 3.5rem); font-weight: 600; letter-spacing: -0.035em;"
         >
-          Discover a public API. Weld a typed client. Keep it in sync.
+          Like shadcn/ui, but for APIs.
         </h1>
         <p class="mt-5 max-w-2xl text-lg leading-relaxed text-muted-foreground">
-          Apiweld is a local tool for coding agents. It finds public APIs, keeps only the endpoints you call, generates a typed client into the repository, and watches that slice as the upstream spec moves.
+          Pick the endpoints you need from any public API. Apiweld writes a typed client for just those into your repo, as code you own instead of an SDK you install. When the provider changes something you call, it shows you which lines break.
         </p>
         <div class="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
-          <LinkButton href={href("/quickstart")} variant="primary" icon>Read the quickstart</LinkButton>
-          <LinkButton href={href("/architecture")} variant="secondary">See the architecture</LinkButton>
+          <LinkButton href={href("/quickstart")} variant="primary" icon>Get started</LinkButton>
+          <LinkButton href={href("/mcp")} variant="secondary">Set up your agent</LinkButton>
         </div>
-        <p class="mt-4 text-sm text-muted-foreground">
-          There is no hosted service. Specs are fetched, cached, and forgotten by the network. State that matters is committed.
-        </p>
       </section>
 
-      <section class="mx-auto grid w-full max-w-6xl gap-6 px-5 pb-16 sm:px-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-start">
-        <ol class="grid gap-3 sm:grid-cols-2">
-          {
-            jobs.map((job) => (
-              <li class="rounded-xl bg-card p-5 ring ring-border">
-                <p class="font-mono text-xs text-weld">{job.kicker}</p>
-                <h2 class="mt-2 text-base font-semibold text-foreground">{job.title}</h2>
-                <p class="mt-1.5 text-sm leading-relaxed text-muted-foreground">{job.body}</p>
-              </li>
-            ))
-          }
-        </ol>
+      <section class="mx-auto grid w-full max-w-6xl gap-6 px-5 pb-16 sm:px-8 lg:grid-cols-2 lg:items-start">
+        <div class="overflow-hidden rounded-xl bg-card ring ring-border">
+          <div class="flex items-center justify-between border-b border-border px-4 py-2.5">
+            <p class="font-mono text-xs text-muted-foreground">terminal</p>
+            <p class="font-mono text-xs text-muted-foreground">or ask your agent</p>
+          </div>
+          <pre class="overflow-x-auto p-4 text-[0.8125rem] leading-relaxed text-foreground"><code>{`$ npx apiweld search "refund a payment" --ops
+stripe  POST /v1/refunds  Create a refund
+
+$ npx apiweld add stripe PostRefunds GetRefundsRefund
+Welded stripe: GET /v1/refunds/{refund}, POST /v1/refunds
+Import from ./src/apis/stripe
+
+$ npx apiweld check
+stripe: no drift`}</code></pre>
+        </div>
 
         <div class="overflow-hidden rounded-xl bg-card ring ring-border">
           <div class="flex items-center justify-between border-b border-border px-4 py-2.5">
@@ -130,6 +158,101 @@ export default defineConfig({
       </section>
 
       <section class="border-y border-border bg-card/60">
+        <div class="mx-auto w-full max-w-6xl px-5 py-14 sm:px-8">
+          <h2 class="text-2xl font-semibold tracking-tight text-foreground">Calling a third-party API is still guesswork</h2>
+          <p class="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+            Coding agents write integrations in seconds. Most of them end up in one of three places.
+          </p>
+          <div class="mt-8 grid gap-8 md:grid-cols-3">
+            {
+              problems.map((item) => (
+                <div>
+                  <h3 class="text-base font-semibold text-foreground">{item.title}</h3>
+                  <p class="mt-2 text-sm leading-relaxed text-muted-foreground">{item.body}</p>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+      </section>
+
+      <section class="mx-auto grid w-full max-w-6xl gap-10 px-5 py-16 sm:px-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+        <div>
+          <h2 class="text-2xl font-semibold tracking-tight text-foreground">Own the client, not a dependency</h2>
+          <p class="mt-3 text-sm leading-relaxed text-muted-foreground">
+            shadcn/ui showed that you don't need a component library in <code class={code}>node_modules</code>. A CLI copies the components you use into your project, and you own them from then on. Apiweld does the same for APIs.
+          </p>
+          <p class="mt-3 text-sm leading-relaxed text-muted-foreground">
+            Stripe's spec has more than 600 operations. A refund flow needs two. Apiweld generates those two, with their types and Zod validators, into a folder in your repo. Your agent can read them, reviewers see the diff, and you can delete the folder whenever you like.
+          </p>
+          <p class="mt-3 text-sm leading-relaxed text-muted-foreground">
+            It also does what copy-paste can't: <code class={code}>apiweld.lock.json</code> records exactly which spec your client came from, so Apiweld can tell you when upstream changes something you rely on.
+          </p>
+        </div>
+        <pre class="overflow-x-auto rounded-xl bg-card p-5 font-mono text-[0.8125rem] leading-7 text-foreground ring ring-border"><code>{`apiweld.config.ts     # what you want
+apiweld.lock.json     # what was built, pinned by hash
+src/apis/stripe/      # generated, committed, yours
+  sdk.gen.ts
+  types.gen.ts
+  zod.gen.ts
+  index.ts`}</code></pre>
+      </section>
+
+      <section class="mx-auto w-full max-w-6xl px-5 pb-16 sm:px-8">
+        <h2 class="text-2xl font-semibold tracking-tight text-foreground">From “I need to refund a payment” to a reviewed client</h2>
+        <p class="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+          Run each step yourself in the terminal, or let your agent call it through MCP. Both use the same commands.
+        </p>
+        <ol class="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {
+            steps.map((step) => (
+              <li class="rounded-xl bg-card p-5 ring ring-border">
+                <p class="font-mono text-xs text-weld">{step.kicker}</p>
+                <h3 class="mt-2 text-base font-semibold text-foreground">{step.title}</h3>
+                <p class="mt-1.5 text-sm leading-relaxed text-muted-foreground">{step.body}</p>
+              </li>
+            ))
+          }
+        </ol>
+      </section>
+
+      <section class="mx-auto w-full max-w-6xl px-5 pb-16 sm:px-8">
+        <h2 class="text-2xl font-semibold tracking-tight text-foreground">How it compares</h2>
+        <p class="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+          Apiweld sits between a vendor SDK and generating the whole spec. It builds on tools that already work: <a href="https://heyapi.dev" class="text-foreground">Hey API</a> generates the code and <a href="https://www.oasdiff.com" class="text-foreground">oasdiff</a> classifies the changes.
+        </p>
+        <div class="mt-8 overflow-x-auto rounded-xl ring ring-border">
+          <table class="w-full min-w-[40rem] border-collapse text-left text-sm">
+            <thead>
+              <tr class="border-b border-border bg-card">
+                <th scope="col" class="px-4 py-3 font-medium text-muted-foreground"><span class="sr-only">Capability</span></th>
+                {comparison.columns.map((column, i) => (
+                  <th scope="col" class:list={["px-4 py-3 font-medium", i === comparison.columns.length - 1 ? "text-weld" : "text-foreground"]}>{column}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {
+                comparison.rows.map((row) => (
+                  <tr class="border-b border-border last:border-0">
+                    <th scope="row" class="px-4 py-3 font-normal text-foreground">{row.label}</th>
+                    {row.values.map((value) => (
+                      <td class:list={["px-4 py-3", value === "yes" ? "text-foreground" : "text-muted-foreground"]}>
+                        {value === "yes" ? "Yes" : value === "no" ? "No" : "Usually"}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+        <p class="mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+          Tools like Composio give agents API access at runtime. Apiweld works at build time: it produces code that ships with your app and runs without an agent.
+        </p>
+      </section>
+
+      <section class="border-y border-border bg-card/60">
         <div class="mx-auto grid w-full max-w-6xl gap-8 px-5 py-14 sm:px-8 md:grid-cols-3">
           {
             guarantees.map((item) => (
@@ -143,42 +266,9 @@ export default defineConfig({
       </section>
 
       <section class="mx-auto w-full max-w-6xl px-5 py-16 sm:px-8">
-        <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h2 class="text-2xl font-semibold tracking-tight text-foreground">What lands in the repo</h2>
-            <p class="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
-              Generated clients are source, not an install artifact. Agents can read them. Reviewers see the diff. <code class="font-mono text-[0.8125rem] text-foreground">outputHash</code> flags hand-edits that the next generate would overwrite.
-            </p>
-          </div>
-          <a href={href("/config")} class="text-sm font-medium text-foreground no-underline hover:underline">Config and lockfile</a>
-        </div>
-        <div class="mt-8 grid gap-6 lg:grid-cols-2">
-          <pre class="overflow-x-auto rounded-xl bg-card p-5 font-mono text-[0.8125rem] leading-7 text-foreground ring ring-border"><code>{`apiweld.config.ts
-apiweld.lock.json
-src/apis/stripe/
-  sdk.gen.ts
-  types.gen.ts
-  zod.gen.ts
-  index.ts
-.apiweld/            # gitignored
-  reports/
-  drift.log.jsonl`}</code></pre>
-          <div class="flex flex-col justify-center gap-4">
-            <p class="text-sm leading-relaxed text-muted-foreground">
-              Machine-wide data — the catalog index and content-addressed specs — lives in <code class="font-mono text-[0.8125rem] text-foreground">~/.apiweld/</code>. Project data lives next to your code.
-            </p>
-            <p class="text-sm leading-relaxed text-muted-foreground">
-              One npm package, two doors: <code class="font-mono text-[0.8125rem] text-foreground">apiweld</code> for people and CI, <code class="font-mono text-[0.8125rem] text-foreground">apiweld mcp</code> for agents. Both call the same core. A Go sidecar, <code class="font-mono text-[0.8125rem] text-foreground">apiweld-engine</code>, loads, normalizes, and diffs specs with oasdiff. It never opens a socket.
-            </p>
-            <a href={href("/architecture")} class="text-sm font-medium text-foreground no-underline hover:underline">How the pieces fit</a>
-          </div>
-        </div>
-      </section>
-
-      <section class="mx-auto w-full max-w-6xl px-5 pb-20 sm:px-8">
         <h2 class="text-2xl font-semibold tracking-tight text-foreground">Documentation</h2>
         <p class="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-          Written for the person wiring an agent and for the agent reading <code class="font-mono text-[0.8125rem] text-foreground">/llms.txt</code>. Every page has a Markdown alternate.
+          Written for you and for your agent. Every page has a Markdown version, and <code class={code}>/llms.txt</code> lists them all.
         </p>
         <ul class="mt-8 grid gap-3 sm:grid-cols-2">
           {
