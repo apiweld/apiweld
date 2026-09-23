@@ -1,0 +1,17 @@
+{
+  "linkset": [
+    {
+      "anchor": "https://example.com/",
+      "item": [
+        {
+          "href": "/docs",
+          "type": "text/html"
+        },
+        {
+          "href": "https://example.com/openapi.json",
+          "type": "application/vnd.oai.openapi+json"
+        }
+      ]
+    }
+  ]
+}
