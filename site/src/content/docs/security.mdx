@@ -1,41 +1,41 @@
 ---
 title: Security
-description: Specs are untrusted input. The engine does not use the network. The MCP server writes four paths.
+description: Specs are treated as untrusted input, the engine never uses the network, and the MCP server writes to four paths only.
 sidebar:
-  order: 9
+  order: 10
   label: Security
 ---
 
-Apiweld treats an OpenAPI document as data from someone else. The rest of the posture follows from that.
+Apiweld treats every OpenAPI spec as data from someone else. Most of what follows comes from that one rule.
 
-## Specs are not code
+## Specs are never run
 
-Nothing in a spec is executed. `$ref` resolution, schema walking, and code generation read structure. Patch functions that repair a broken spec are TypeScript you wrote in `apiweld.config.ts`. They are not loaded from the document.
+Nothing in a spec is executed. Resolving references, walking schemas, and generating code only read the document's structure. The functions that fix a broken spec (`patch`) are TypeScript you wrote in your own `apiweld.config.ts`. They're never loaded from the spec.
 
-Remote `$ref`s are fetched only from the spec's own host, unless you allow more hosts in config.
+A spec can only pull in `$ref`s from its own host, unless you allow other hosts with `allowRemoteHosts` in the config.
 
 ## The engine is offline
 
-`apiweld-engine` does not open network connections. The TypeScript process downloads a spec, writes a file, and passes that path. A compromised or merely hostile spec cannot turn the engine into a client.
+`apiweld-engine` never opens a network connection. The TypeScript side downloads the spec, saves it to a file, and gives the engine the path. Even a malicious spec can't turn the engine into a network client.
 
-Engine binaries are produced in GitHub Actions with goreleaser. Published SHA-256 checksums and npm provenance are how you know the binary npm selected is the one CI built. `APIWELD_ENGINE_PATH` is the escape hatch for a binary you built yourself; pointing it somewhere is your choice.
+Engine binaries are built in GitHub Actions with goreleaser. The published SHA-256 checksums and npm provenance let you confirm the binary npm installed is the one CI built. If you set `APIWELD_ENGINE_PATH` to use your own binary, you're responsible for it.
 
-## The catalog snapshot is a file with a checksum
+## Downloads are verified
 
-`apiweld catalog sync` refuses a snapshot whose bytes do not match the published digest. `catalog add` fetches only the spec URL you named. `catalog build` skips the snapshot and talks to APIs.guru directly.
+`apiweld catalog sync` rejects a catalog snapshot that doesn't match its published checksum. `catalog add` fetches only the URL you give it. `catalog build` doesn't use the snapshot at all and reads APIs.guru directly.
 
-## Generated clients are plain TypeScript
+## Generated code is plain TypeScript
 
-Output is source files under the configured `output` directory. There is no postinstall script in the generated tree, and nothing there is executed because it was generated. Commit it, read it, delete an API by removing it from the config and regenerating.
+The generated client is ordinary source code in your `output` folder. It has no install scripts, and nothing in it runs until your own code calls it. Commit it and review it like the rest of your code. To remove an API, delete it from the config and regenerate.
 
-## The MCP server is not a network service
+## The MCP server has no network listener
 
-`apiweld mcp` uses stdio. It has no bind address. Writes are limited to the configured output directory, `apiweld.config.ts`, `apiweld.lock.json`, and `.apiweld/`. Application code outside those paths is not a write target of the server. An agent that applies a heal plan does so as itself, with whatever file access you already granted that agent.
+`apiweld mcp` talks to your agent over stdin and stdout. It doesn't listen on a port. It can only write to the `output` folder, `apiweld.config.ts`, `apiweld.lock.json`, and `.apiweld/`. When an agent fixes call sites from a heal plan, it edits your code with its own permissions, the ones you already gave it, not through Apiweld.
 
-## Drift logs store shapes
+## Drift logs record shapes, not data
 
-When response validation is on, `.apiweld/drift.log.jsonl` records the operation, the JSON path, the expected type, the received type, and a timestamp. It does not record payload values. The log is gitignored and stays on the machine that saw the response.
+With response validation on, `.apiweld/drift.log.jsonl` records the endpoint, the JSON path, the expected type, the received type, and a timestamp. It never records response values. The log is gitignored and stays on the machine that received the response.
 
-## What this is not
+## Your API keys stay yours
 
-Apiweld does not broker credentials to the APIs you call. Auth schemes are described so the generated client and the agent know a bearer token is required. The token stays in your environment, the way any other client would use it. There is no Apiweld account for that secret to live in, because there is no account.
+Apiweld never handles the credentials for the APIs you call. The spec's auth scheme tells the generated client and your agent that, say, a bearer token is required. You supply the token from your own environment, as you would with any other client. There's no Apiweld account to store it in.

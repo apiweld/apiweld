@@ -1,53 +1,78 @@
 ---
 title: Drift detection
-description: How apiweld check decides that a spec change matters, and which class of change it is.
+description: How apiweld check finds upstream changes to the endpoints you use, and how it decides whether they're breaking, risky, or safe.
 sidebar:
   order: 6
   label: Drift detection
 ---
 
-`apiweld check` runs on your machine: from a pre-commit hook, from your own CI, or when an agent calls `check_drift`. It does not run on a schedule that Apiweld operates. You own the cron.
+APIs change. Providers rename fields, add required parameters, and retire endpoints, and most don't tell you which of your calls are affected. `apiweld check` compares the provider's current spec with the version in your [lockfile](/config#lockfile) and reports only changes to the endpoints you use.
 
-The check looks only at operations in the [lockfile](/config). A new field on an endpoint you never selected is invisible.
+Run it whenever you like: by hand, in a pre-commit hook, on a schedule in your CI, or from your agent with `check_drift`. Apiweld doesn't run anything on a server, so you decide when checks happen.
 
-## The pass
+```sh
+npx apiweld check
+```
+
+## What gets reported
+
+Only changes that affect your selected endpoints. If Stripe adds a field to an endpoint you don't call, `check` stays quiet. If Stripe changes a schema that one of your endpoints uses, that change is reported against every selected endpoint that uses the schema.
+
+Each change gets one of three labels:
+
+| Label | What it means | Examples | What Apiweld does |
+| --- | --- | --- | --- |
+| **Breaking** | Code that works today will fail. | An endpoint was removed. A request field became required. A response field was removed or changed type. An allowed request value was removed. | Writes a [heal plan](/heal). Never regenerates on its own. |
+| **Risky** | Might break you, depending on how you use it. | A new value appeared in a response enum. A field became nullable. The auth scheme changed. The endpoint was deprecated. | Regenerates in a separate worktree, type-checks your project, and reports the result. |
+| **Safe** | Nothing you use can break. | A new optional field or parameter. A description changed. | Regenerates automatically if the API's `policy.autoRegenerate` is `"safe"`. |
+
+The labels come from [oasdiff](https://www.oasdiff.com), which has a rule for each kind of change. Its `ERR` level becomes breaking, `WARN` becomes risky, and `INFO` becomes safe.
+
+If a provider's conventions make one rule fire on changes that don't matter to you, re-label that rule for that API with [`levelOverrides`](/config#per-api-options). The override lives in your config and applies to that API only.
+
+## How a check runs
 
 <Steps>
-  <Step title="Conditional fetch">
-    GET the resolved URL with the stored ETag. A 304, or a body whose `specHash` matches the lock, ends the pass. No diff, no output.
+  <Step title="Fetch only if something changed">
+    Apiweld requests the spec with the ETag from the last fetch. If the provider says nothing changed, or the new spec is byte-for-byte the same, the check ends here.
   </Step>
-  <Step title="Normalize and re-slice">
-    The engine normalizes the new spec (bundle refs, sort keys, upgrade Swagger 2.0 to OpenAPI 3.x). The slicer applies the same operation list. An operation that no longer resolves is recorded.
+  <Step title="Normalize and slice">
+    The new spec is normalized (references resolved, keys sorted, Swagger 2.0 upgraded to OpenAPI 3) and cut down to your endpoints and the schemas they use. That's the slice. If one of your endpoints no longer exists, that's recorded as a breaking change.
   </Step>
-  <Step title="Compare slice hashes">
-    If `specHash` moved and `sliceHash` did not, only unused parts of the spec changed. The lock is updated quietly. Nobody is paged.
+  <Step title="Skip changes you don't use">
+    If the spec changed but your slice didn't, the change was somewhere you don't use. The lock is updated and nothing is reported.
   </Step>
-  <Step title="Diff and classify">
-    The engine runs oasdiff's breaking-change checks on the full old and new specs. Apiweld then keeps findings whose method and path are in your selection. Shared schema changes are reported on every selected operation that uses the schema. Removing a selected operation is an `api-removed` finding.
+  <Step title="Compare and label">
+    oasdiff compares the old and new specs. Apiweld keeps only the findings for your endpoints and labels each one.
   </Step>
-  <Step title="Report and exit">
-    A terminal table by default, `--json` for machines, and a Markdown report under `.apiweld/reports/`. `--fail-on breaking` is the default CI gate. `--fail-on risky` is stricter.
+  <Step title="Report">
+    Results print as a table, or as JSON with `--json`. A Markdown report is also written to `.apiweld/reports/`.
   </Step>
 </Steps>
 
-Filtering happens after the diff, not before it. That keeps oasdiff's attribution for shared schemas. If a spec is large enough that a full diff is the wrong trade (some cloud vendors), a later threshold can pre-slice. v0.1 does not need that path.
+## Use it as a CI gate
 
-## Classes
+`check` exits with a non-zero code when it finds a breaking change. To also fail on risky changes, use `--fail-on risky`.
 
-oasdiff speaks `ERR`, `WARN`, and `INFO`. Apiweld maps them:
+```sh
+npx apiweld check --fail-on risky
+```
 
-| oasdiff | Class | Typical change | Default action |
-| --- | --- | --- | --- |
-| `ERR` | **breaking** | Operation removed. Required request field or parameter added. Response property removed or retyped. Request enum value removed. | Write a [heal plan](/heal). Do not regenerate over the current client. |
-| `WARN` | **risky** | Response enum value added. Field became nullable. Security scheme changed. Operation deprecated. | Regenerate in a worktree, type-check, and report. |
-| `INFO` | **safe** | Optional field or parameter added. Description edited. | Auto-regenerate when `policy.autoRegenerate` is `"safe"`. |
+To have CI open a pull request with the fix, see [Heal in CI](/heal#in-ci).
 
-A per-API override can remap a noisy oasdiff check id when a provider's style makes one rule fire on purpose. The override is yours, in config, not a global mute.
+## Apply safe updates
 
-## Runtime signal
+`apiweld update` runs a check and then applies what your policy allows. Safe changes regenerate in place when `policy.autoRegenerate` is `"safe"`. Risky changes are reported with their type-check results. Breaking changes stop at the heal plan.
 
-Specs lie, or lag. With `validators: "zod"`, the generated client can validate responses in report-only mode (the v0.4 release). A mismatch appends one line to `.apiweld/drift.log.jsonl`: operation, JSON path, expected type, received type, timestamp. Payload values are not stored. `apiweld check` includes that log in its report so a live drift shows up next to spec drift.
+## Runtime drift
 
-## Update
+Specs aren't always accurate. Sometimes the live API returns something the spec doesn't describe. With `validators: "zod"`, the generated client includes a `reportingFetch` that checks each response against the spec's schema without blocking anything:
 
-`apiweld update` is check plus the policy. Safe findings regenerate in place when the API allows it. Anything breaking stops at the plan. Risky findings are reported from the worktree type-check rather than silently written into your branch.
+```ts
+import { client } from "./apis/stripe/client.gen";
+import { reportingFetch } from "./apis/stripe";
+
+client.setConfig({ fetch: reportingFetch });
+```
+
+When a response doesn't match, one line is appended to `.apiweld/drift.log.jsonl` with the endpoint, the JSON path, the expected type, the received type, and a timestamp. Response values are never logged. The next `apiweld check` includes these entries in its report, next to the spec changes.

@@ -1,41 +1,41 @@
 ---
 title: Principles
-description: Eight rules that decide what Apiweld will not become. When a design is unclear, start here.
+description: The eight rules that shape Apiweld, and what each one rules out.
 sidebar:
-  order: 1
+  order: 8
   label: Principles
 ---
 
-Apiweld is a local tool. These rules exist so it stays one. If a feature needs an account, a model call, or a server you do not run, it does not belong in the core.
+These rules decide what Apiweld does and, just as often, what it won't do. When a design question comes up, the answer starts here. If a feature would need an account, a call to a language model, or a server you don't run, it doesn't belong in Apiweld.
 
-## Nothing leaves the machine
+## Nothing leaves your machine
 
-The only network traffic is an HTTP GET for a public spec, or for the catalog snapshot published with the project. Both are cached. With the cache warm, or with `APIWELD_OFFLINE=1`, search, generate, and diff run without a socket. There is no telemetry and no account.
+The only network requests are HTTP GETs for public specs and for the optional catalog snapshot. Both are cached. With a warm cache, or with `APIWELD_OFFLINE=1`, search, generation, and diffs run with no network at all. There's no telemetry and no account.
 
-## The agent is the brain
+## Your agent does the thinking
 
-Apiweld does not call a language model. It searches, slices, generates, diffs, and type-checks. Your coding agent — Cursor, Claude Code, or anything else that speaks MCP — does the reasoning and edits application code through the [MCP tools](/mcp). The same actions are available from the [CLI](/cli), so a human or a CI job can reproduce what the agent did.
+Apiweld never calls a language model. Everything it does (search, slicing, generation, diffs, type-checks) is deterministic: same input, same output. Your coding agent, whether that's Claude Code, Cursor, or any other MCP client, does the reasoning and edits your code through the [MCP tools](/mcp). Every tool matches a [CLI](/cli) command, so you or your CI can reproduce anything the agent did.
 
 ## Git is the database
 
-Per-project state is two committed files: `apiweld.config.ts` and `apiweld.lock.json`. There is no project database to migrate and no dashboard to sign into. A reviewer sees the client change. A clean checkout plus the lock rebuilds the same client. See [Config and lockfile](/config).
+A project's state is two committed files: `apiweld.config.ts` and `apiweld.lock.json`. There's no database to migrate and no dashboard to log in to. Reviewers see every change to a client in the diff, and a fresh checkout plus the lock rebuilds the same client. See [Config and lockfile](/config).
 
 ## Only what you use
 
-Generated files, drift checks, and alerts are scoped to the operations you selected. A change to an endpoint you do not call produces no alert. The slicer follows parameters, bodies, responses, and the schemas they reference, and hashes that closure. Only a change to the slice is worth interrupting you for.
+Generated code, drift checks, and alerts cover only the endpoints you selected. A change to an endpoint you don't call never produces an alert. Apiweld follows each selected endpoint's parameters, request and response bodies, and the schemas they reference, then hashes the result. Only a change to that set is worth interrupting you for.
 
 ## Never auto-merge a breaking change
 
-Safe changes may regenerate when a per-API policy says so. Breaking changes produce a [heal plan](/heal) and a branch. Someone reviews them. Apiweld will not open a pull request with a token it owns, and it will not merge one.
+Safe changes can regenerate automatically if you allow it for that API. Breaking changes produce a [heal plan](/heal) and a branch, and a person reviews them. Apiweld never merges anything, and in CI it only acts with the token you give it.
 
-## Reuse the engines that already work
+## Reuse what already works
 
-Code generation goes through Hey API (`@hey-api/openapi-ts`). Diffing and breaking-change classification go through the oasdiff Go library, wrapped by `apiweld-engine`. Apiweld is the index, the slice, and the workflow around those libraries. It does not reimplement either.
+Apiweld doesn't reinvent code generation or spec diffing. TypeScript clients come from Hey API (`@hey-api/openapi-ts`), and Go clients come from oapi-codegen. Diffs and breaking-change rules come from the oasdiff Go library, wrapped in a small binary called `apiweld-engine`. Apiweld supplies the catalog, the slicing, the lockfile, and the workflow around them.
 
 ## Adapters at the edges
 
-Spec sources and generators sit behind small interfaces. A Python or Go generator, or a private catalog, can plug in later without a rewrite of search or the lock. The first generator is Hey API. The first resolvers are APIs.guru, a raw URL, and a local file.
+Spec sources and code generators sit behind small interfaces. Adding a new generator (another language) or a new kind of source (a private catalog) doesn't require changes to search, slicing, or the lock. Today that means two generators (Hey API and oapi-codegen) and four kinds of source: a URL, a local file, APIs.guru, and a provider's `.well-known` catalog.
 
 ## TypeScript for config, JSON for machine state
 
-You edit `apiweld.config.ts`. It type-checks, autocompletes, and can hold functions (a spec patch, a custom name) that a data format cannot express. Apiweld writes `apiweld.lock.json`. Keys and operations are sorted so the diff stays small. There is no YAML.
+You edit `apiweld.config.ts`. Your editor type-checks and autocompletes it, and it can hold functions, such as a spec patch, that a data format can't express. Apiweld writes `apiweld.lock.json` with sorted keys, so its diffs stay small. There's no YAML.

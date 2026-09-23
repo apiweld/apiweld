@@ -1,49 +1,53 @@
 ---
 title: Roadmap
-description: Four releases. Each one is usable on its own, and each one has a concrete "done when."
+description: What each release delivered, how we tested that it works, and the design decisions that are settled.
 sidebar:
-  order: 10
+  order: 11
   label: Roadmap
 ---
 
-Versions ship in order, and you can stop after any of them. Later work does not reopen the decisions below.
+Apiweld was built in four releases, each usable on its own. All four have shipped as of 0.4.
 
-## v0.1 — Weld
+## v0.1 Weld: add a client
 
-The engine normalizes specs and lists operations. Platform packages and the release pipeline exist. Catalog sync and local build work, and search works against that index. The slicer, spec store, and lockfile exist. `init`, `search`, `show`, `add`, `remove`, and `generate` drive Hey API. Config edits go through magicast when the AST allows it.
-
-MCP in this release: `search_apis`, `search_operations`, `describe_operation`, `add_operations`, `remove_operations`.
+Search a catalog of APIs, pick endpoints, and generate a typed client into your repo. This release includes the Go engine, the catalog, the slicer, the lockfile, and the `init`, `search`, `show`, `add`, `remove`, and `generate` commands, plus the matching MCP tools.
 
 **Done when** an agent can go from "I need to create a Stripe refund" to a typed, committed, two-endpoint client without leaving the chat.
 
-## v0.2 — Watch
+## v0.2 Watch: detect drift
 
-The engine grows `breaking` and `changelog`. `check` does the conditional fetch, the slice-hash short circuit, finding filters, and `--fail-on`. Reports are JSON and Markdown. `update` honors `autoRegenerate: "safe"`. MCP gains `check_drift`.
+`apiweld check` fetches the latest spec, skips changes to endpoints you don't use, and labels the rest breaking, risky, or safe. `--fail-on` makes it a CI gate, and reports are written as JSON and Markdown. `apiweld update` applies safe changes when your policy allows it. The MCP server gains `check_drift`.
 
-**Done when** replaying a real Stripe or GitHub spec history against a fixture project reports exactly the changes that affect the selected operations, and nothing else.
+**Done when** replaying a real Stripe or GitHub spec history against a test project reports exactly the changes that affect the selected endpoints, and nothing else.
 
-## v0.3 — Heal
+## v0.3 Heal: fix breaking changes
 
-Worktree regeneration, the TypeScript impact analyzer, heal plans in JSON and Markdown, `heal --apply`, and `verify`. MCP gains `get_heal_plan` and `verify`. A GitHub Action template runs a scheduled check and opens a branch plus a pull request in the user's repository.
+`apiweld heal` regenerates the client in a separate worktree, runs the TypeScript compiler to find the call sites that break, and writes a plan. `heal --apply` and `verify` let an agent fix those call sites until everything passes. The MCP server gains `get_heal_plan` and `verify`, and a GitHub Action runs the check on a schedule and opens a pull request.
 
-**Done when** a breaking fixture produces a plan whose call sites match the compiler errors, and an agent can edit them until `verify` is green.
+**Done when** a breaking test change produces a plan whose call sites match the compiler errors, and an agent can fix them until `verify` passes.
 
-## v0.4 — Widen
+## v0.4 Widen: more sources, languages, and signals
 
-Report-only Zod validation and `drift.log.jsonl`. The RFC 9727 well-known catalog resolver. Custom catalogs in `settings.json`. A second generator (Python via openapi-python-client, or Go via oapi-codegen). Typed operation ids in `defineConfig` for APIs already in the lock, so the editor can autocomplete `METHOD path`. The CLI already accepts an operation id and stores the method and path.
+- Runtime drift: generated Zod validators log responses that don't match the spec, without blocking them.
+- `wellknown:` sources that read a provider's [RFC 9727](https://www.rfc-editor.org/rfc/rfc9727) API catalog.
+- Your own catalogs, configured in `~/.apiweld/settings.json`.
+- A second generator: Go clients with oapi-codegen.
+- Autocomplete for operation names in `apiweld.config.ts`.
 
-## Decisions already made
+## Settled decisions
 
-These are closed. Implementations should follow them.
+These choices are made. New work should follow them.
 
-1. **Native engine binaries for v0.1.** A WASI build may be spiked while watch is underway. It is not the artifact users install first.
-2. **Diff the full spec, then filter findings** to the selected operations, so shared-schema changes keep oasdiff's attribution. Pre-slicing is a fallback if one spec is too large, not the default.
-3. **Commit generated code.** It is reviewable and readable by agents. `outputHash` catches hand-edits. Generating only on install is not the model.
+1. **Native engine binaries.** A single WebAssembly build might be explored later. It won't replace the native binaries by default.
+2. **Diff the full spec, then filter.** Filtering findings after the diff keeps oasdiff's attribution for shared schemas. Slicing before the diff is only a fallback for specs too large to diff whole.
+3. **Commit generated code.** It's reviewable and agents can read it. `outputHash` catches hand-edits. Generating on install isn't supported.
 4. **Compact signatures by default.** `describe_operation` and `apiweld show` expand nested types only when asked (`--depth`).
-5. **magicast when the edit is safe.** If the config is dynamic, print the snippet and let the agent or the human apply it. Do not guess.
+5. **Edit the config only when it's safe.** If the config is too dynamic to edit reliably, print the snippet and let the agent or a person apply it. Never guess.
 
-## Where this sits
+## How it relates to other tools
 
-APIs.guru is the seed catalog (CC0); Apiweld resolves to upstream when `x-origin` is present. Hey API generates code — their hosted product is for API owners publishing specs, and Apiweld is the consumer side for third-party APIs. oasdiff is the diff library. Hosted migration products and runtime tool-calling gateways solve adjacent problems: they are not a local catalog plus a committed client.
-
-The loop this project is for: discover, pick endpoints, generate a slim typed client, and keep that client healthy, on the machine where the code already lives.
+- **[APIs.guru](https://apis.guru)** is the seed for the public catalog (CC0). Apiweld fetches from the provider's own URL when the directory records one.
+- **[Hey API](https://heyapi.dev)** generates the TypeScript code. Its hosted platform serves API providers publishing their specs. Apiweld is for the teams consuming third-party APIs.
+- **[oasdiff](https://www.oasdiff.com)** does the diffing and breaking-change rules.
+- **Hosted migration services** turn spec changes into pull requests, but run on someone else's servers and don't help you find APIs.
+- **Runtime tool platforms** such as Composio let agents call APIs while they run. Apiweld works at build time: it produces code that ships with your app and runs without an agent.

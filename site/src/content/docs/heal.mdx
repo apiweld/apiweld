@@ -1,38 +1,48 @@
 ---
 title: Heal loop
-description: Breaking drift becomes a plan, a type-check, and a branch. The agent edits. A human merges.
+description: How a breaking API change becomes a regenerated client, a list of the lines that break, and a branch for you to review.
 sidebar:
   order: 7
   label: Heal loop
 ---
 
-Healing is split on purpose. Apiweld does the deterministic work. The coding agent edits call sites. A person merges. Nothing in this loop is auto-merged, including the pull request a CI template might open in your repository.
+When `apiweld check` finds a breaking change, `apiweld heal` works out exactly where your code breaks and sets up the fix. The work is split three ways:
 
-You can run it with no agent at all. `apiweld heal` still produces a branch with the regenerated client and a list of call sites that no longer type-check. That is most of a fix, without a model in the path.
+- **Apiweld** does the mechanical parts: it regenerates the client, runs the compiler, and writes the plan. No AI is involved.
+- **Your coding agent** (or you) edits the code that no longer compiles.
+- **A person** reviews the change and merges it. Nothing is ever merged automatically.
 
-## Steps
+You don't need an agent. Without one, `apiweld heal` still gives you the regenerated client and a list of every call site that no longer type-checks. That's most of the fix.
+
+## How it works
 
 <Steps>
-  <Step title="Regenerate into a worktree">
-    The new client is written to a temporary git worktree. The working tree you have open is untouched until you accept the plan.
+  <Step title="Regenerate off to the side">
+    Apiweld writes the new client into a temporary git worktree. Your working copy isn't touched until you decide to apply it.
   </Step>
-  <Step title="Type-check for impact">
-    The TypeScript compiler runs over the project, using its `tsconfig.json`, against the new client. Each error becomes a finding: file, line, symbol, and the engine finding it traces to. Matching is by operation and generated symbol name. There is no heuristic pass and no model.
+  <Step title="Find what breaks">
+    The TypeScript compiler checks your project, using your `tsconfig.json`, against the new client. Each error is matched to the API change that caused it, by endpoint and generated type name.
   </Step>
   <Step title="Write the plan">
-    `.apiweld/reports/<api>-<date>.json` and a Markdown twin. The plan lists findings, affected call sites, and hints taken from the spec — a likely rename, or a successor mentioned by a deprecation extension or a description.
+    The plan is saved to `.apiweld/reports/<api>-<date>.json`, with a Markdown copy next to it. It lists each change, the file and line of each call site it breaks, and hints from the spec, such as a likely renamed field or the replacement for a deprecated endpoint.
   </Step>
-  <Step title="Let the agent edit">
-    The agent reads the plan with `get_heal_plan`, applies the regenerated client with `apiweld heal --apply`, fixes call sites, and calls `verify` until the type-check and the configured test command pass.
+  <Step title="Fix the call sites">
+    Your agent reads the plan with `get_heal_plan` and applies the new client with `apiweld heal --apply`. It then fixes the call sites and runs `verify` until the type-check and your tests pass.
   </Step>
   <Step title="Review and merge">
-    Locally this is an ordinary diff. In CI, the GitHub Action template runs `apiweld check`, then opens a branch and a pull request whose description is the plan. The workflow uses your token, in your repository. Apiweld does not merge it.
+    Locally, the result is an ordinary diff. In CI, it's a pull request. Either way, a person merges it.
   </Step>
 </Steps>
 
-## Plan shape
+```sh
+npx apiweld heal stripe           # write the plan
+npx apiweld heal stripe --apply   # also put the new client in your working tree
+npx apiweld verify                # type-check, then run your tests
+```
 
-A plan is JSON first. The Markdown file is the same content for a reviewer who does not want to read the structure.
+## What a plan looks like
+
+Plans are JSON so agents can read them. The Markdown copy has the same content for people.
 
 ```json
 {
@@ -60,8 +70,38 @@ A plan is JSON first. The Markdown file is the same content for a reviewer who d
 }
 ```
 
-`verify` records the commands the agent (or you) should go green on. `apiweld verify` runs them. It does not invent a test runner: the test command is whatever you configured, and it is omitted when you did not.
+Each finding says what changed, which endpoint it affects, and where your code breaks, with the exact compiler error. The agent doesn't have to re-read the spec or guess. Its job is the edit that makes `verify` pass. If it can't find one, the plan still works as a precise bug report for a person.
 
-## What the agent is not asked to do
+`verify` lists the commands that must pass. The test command comes from `verify.test` in your [config](/config#top-level-options), and is left out if you haven't set one.
 
-The agent is not asked to reinterpret the spec from scratch. The plan already names the operation, the symbol, and the compiler error. The agent's job is the edit that makes `verify` pass, in a diff you can read. If it cannot, the plan is still a precise bug list for a person.
+## In CI
+
+The Apiweld GitHub Action runs `apiweld check` on a schedule. When one of your endpoints drifts, it applies the regenerated client, pushes a branch named `apiweld/heal-<date>`, and opens a pull request with the heal plan as its description. It runs in your repository with your token, and it never merges.
+
+```yaml title=".github/workflows/apiweld.yml"
+name: apiweld
+on:
+  schedule:
+    - cron: "0 8 * * 1"   # Mondays at 08:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: apiweld/apiweld/action@main
+        with:
+          fail-on: breaking
+```
+
+Inputs: `fail-on` (`breaking` or `risky`), `api` to check a single API, `command` to run Apiweld some other way (for example `bun run apiweld`), and `token` if the default `GITHUB_TOKEN` can't push branches. The action sets a `drift` output to `true` when something changed.
+
+The pull request contains the regenerated client and the plan. The call sites still need fixing, either by you or by an agent working on that branch.

@@ -1,12 +1,12 @@
 ---
 title: Architecture
-description: One TypeScript core, a Go engine that never dials out, and two front doors that call the same functions.
+description: How Apiweld is built. One TypeScript core, a Go engine for spec diffs that never touches the network, and a CLI and an MCP server that both call the same core.
 sidebar:
-  order: 8
+  order: 9
   label: Architecture
 ---
 
-A coding agent, or you, or CI, talks to one core. The core reads public specs, caches them, slices the operations you named, and asks Hey API to write TypeScript. Diffs go through a small Go binary. The files that matter end up in the repo.
+You and your CI use the CLI, and your agent uses the MCP server. Both call the same TypeScript core. The core fetches and caches specs, slices them to your endpoints, and hands generation to Hey API or oapi-codegen. Spec comparison runs in a small Go binary. The results land in your repo.
 
 ```text
 coding agent ──▶ apiweld mcp ──┐
@@ -18,44 +18,48 @@ developer / CI ──▶ apiweld CLI ┘         │                 │
                                <output>/*              specs/<sha256>.json
 ```
 
-The engine's protocol is one JSON request on stdin and one JSON response on stdout. A non-zero exit is an engine error. It is stateless. The TypeScript side fetches. The engine only reads files it is given.
+## Catalog
 
-## Catalog index
+The catalog is a SQLite database with full-text search over APIs and every one of their endpoints. It answers questions like "which endpoint refunds a payment?" in milliseconds, without loading any specs.
 
-A SQLite database with FTS5 over APIs and every operation. Seeded from APIs.guru plus any sources you add. It answers endpoint questions in milliseconds so search does not parse specs.
+There are three ways to fill it:
 
-`catalog add <id> <url>` indexes one provider spec and leaves the rest of the catalog in place. That is how an agent adds a provider when a repo starts calling it. The default snapshot is still rebuilt weekly by the project's GitHub Action and attached to a release. `catalog sync` checks the published checksum before replacing `catalog.db`. `catalog build` indexes APIs.guru locally, and it is the slow path. Extra sources in `~/.apiweld/settings.json` — a folder of internal specs, a list of URLs — are indexed beside the public set and tagged with their source.
+- `catalog add <id> <url>` indexes one API. This is the usual way: add the APIs a project uses as you need them.
+- `catalog sync` downloads a prebuilt snapshot of the [APIs.guru](https://apis.guru) directory. The snapshot is rebuilt weekly by the project's GitHub Action and checked against a published SHA-256 before use.
+- `catalog build` indexes APIs.guru on your machine. It's slow, but it doesn't depend on the project's releases.
 
-Directory entries go stale. Search results include when the spec last changed, so an agent can prefer a maintained API. A small `upstreams.json` in the Apiweld repo holds verified origin URLs for widely used APIs, and resolvers follow `x-origin` when the directory recorded one.
+Your own specs, from a folder or a list of URLs in `~/.apiweld/settings.json`, are indexed next to the public ones and labelled with their source.
 
-Tables, in short: `apis` (one row per service), `operations` (method, path, operationId, tags, auth, deprecated), `ops_fts` (the search index), `spec_versions` (local history for diffs), and `meta` (snapshot date and schema version).
+Directory entries can go stale. Search results show when each spec last changed, so an agent can prefer maintained APIs. Where the directory records the provider's original URL (`x-origin`), Apiweld fetches from the provider. A curated `upstreams.json` in the Apiweld repo lists verified URLs for widely used APIs.
 
 ## Spec store
 
-Every fetched spec is normalized and stored at `~/.apiweld/specs/<sha256>.json`. The lock pins that hash. Old bytes stay available for a diff and for `apiweld generate` with the network off. HTTP validators live in `http-cache.json`.
+Every fetched spec is normalized and saved as `~/.apiweld/specs/<sha256>.json`, named by its hash. The lockfile records that hash, so the exact spec behind your client is always available, both for diffs and for rebuilding offline.
 
 ## Engine
 
-`apiweld-engine` links oasdiff (`load`, `diff`, `checker`) and kin-openapi, which is the parser oasdiff already uses, so hashes and diffs agree.
+`apiweld-engine` is a small Go program built on [oasdiff](https://www.oasdiff.com) and kin-openapi, the OpenAPI parser oasdiff itself uses, so hashes and diffs agree.
 
-| Command | Result |
+| Command | What it does |
 | --- | --- |
-| `normalize` | Load JSON or YAML, bundle `$ref`s, convert Swagger 2.0 to OpenAPI 3.x, emit canonical JSON with sorted keys. |
-| `operations` | List method, path, operationId, summary, tags, deprecated, and security, for the index. |
-| `breaking` | oasdiff breaking-change checks between two specs, as JSON. |
-| `changelog` | The full changelog, all severities, as JSON. |
+| `normalize` | Loads a JSON or YAML spec, resolves `$ref`s, upgrades Swagger 2.0 to OpenAPI 3, and writes canonical JSON with sorted keys. |
+| `operations` | Lists each endpoint's method, path, operation id, summary, tags, deprecation, and auth, for the catalog. |
+| `breaking` | Runs oasdiff's breaking-change rules between two specs. |
+| `changelog` | Lists every change between two specs, at every level. |
 
-Findings carry method and path. The engine diffs the full documents. The TypeScript side drops findings outside the selection, so a shared schema change is attached to each selected operation that references it.
+The engine reads one JSON request on stdin and writes one JSON response on stdout. It keeps no state and never opens a network connection. The TypeScript side downloads specs and passes the engine file paths.
 
-Distribution follows the esbuild pattern. The `apiweld` package optionally depends on `@apiweld/engine-darwin-arm64`, `-darwin-x64`, `-linux-x64`, `-linux-arm64`, and `-win32-x64`. npm installs the matching one. `APIWELD_ENGINE_PATH` overrides it. Binaries are built with goreleaser, checksums are published, and npm provenance is on.
+The engine compares the full old and new specs. The TypeScript side then drops findings for endpoints you didn't select. Diffing the whole spec means a change to a shared schema is correctly attributed to every selected endpoint that uses it.
 
-Native binaries are the v0.1 choice. A WASI build is a later experiment, not the default.
+The engine ships as one npm package per platform (`@apiweld/engine-darwin-arm64`, `-darwin-x64`, `-linux-x64`, `-linux-arm64`, `-win32-x64`), the same way esbuild ships. npm installs only the one that matches your machine. Binaries are built in GitHub Actions with goreleaser, with published checksums and npm provenance. Set `APIWELD_ENGINE_PATH` to use your own build.
 
 ## Slicer
 
-The slicer walks the selected operations and their transitive closure: parameters, request bodies, responses, referenced schemas. It is TypeScript over the normalized JSON. `sliceHash` is the cheap test for "did anything I use change?"
+The slicer starts from your selected endpoints and collects everything they reference: parameters, request bodies, responses, and every schema those point to. The hash of that set is `sliceHash`, a cheap way to answer "did anything I use change?"
 
-## Generator
+## Generators
+
+Generators implement one small interface:
 
 ```ts
 interface GeneratorAdapter {
@@ -70,14 +74,19 @@ interface GeneratorAdapter {
 }
 ```
 
-The Hey API adapter runs `@hey-api/openapi-ts` in-process. The selection becomes `parser.filters.operations.include`, which drops orphaned schemas. The Zod plugin is enabled when validators are on. Per-API `patch` functions are forwarded to `parser.patch`.
+- **Hey API** (`hey-api`, TypeScript) runs `@hey-api/openapi-ts` in-process. Your selection becomes its operation filter, which also drops schemas nothing uses. With `validators: "zod"`, it adds Zod schemas and the runtime drift helper. Per-API `patch` functions are passed to its `parser.patch`.
+- **oapi-codegen** (`oapi-codegen`, Go) generates a Go client for the same selection.
 
-A second adapter (Python or Go) is a later release. The interface is the seam.
+## Impact analysis and heal
 
-## Impact and heal
+The impact analyzer regenerates a client in a temporary git worktree and runs the TypeScript compiler over your project. The heal planner matches the compiler errors to the engine's findings. See the [heal loop](/heal).
 
-The impact analyzer regenerates into a worktree and runs the TypeScript compiler API. The heal planner joins those diagnostics with engine findings. Both are described in the [heal loop](/heal).
+## Working on Apiweld itself
 
-## Repository, when you are building Apiweld itself
+The repository is a Bun workspace with these packages: `core`, `cli`, `mcp`, `gen-heyapi`, `gen-oapi`, and `apiweld`, the published package. `engine/` is the Go module. `catalog/` holds the snapshot job and `upstreams.json`. `fixtures/` holds real spec version pairs for tests. This site lives in `site/`.
 
-The repo is a Bun workspace: `core`, `cli`, `mcp`, `gen-heyapi`, `gen-oapi`, and an umbrella `apiweld` package. `engine/` is the Go module. Per-platform binary packages are generated at release. `catalog/` holds the snapshot job and `upstreams.json`. `fixtures/` holds real spec pairs for tests. This documentation site lives in `site/`. Install and build the tool with `bun install` and `bun run engine:build`.
+```sh
+bun install
+bun run engine:build
+bun run test
+```

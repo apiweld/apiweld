@@ -1,0 +1,59 @@
+---
+title: Overview
+description: What Apiweld is, the problem it solves, and the handful of terms the rest of these docs use.
+sidebar:
+  order: 1
+  label: Overview
+---
+
+Apiweld adds typed API clients to your repo the way shadcn/ui adds components. You pick the endpoints you need from a public API. Apiweld generates a client for just those endpoints into a folder in your project. From then on it's your code: you commit it, read it, and review changes to it like any other file.
+
+Unlike copied code, the client remembers where it came from. When the provider changes something you call, `apiweld check` tells you what changed, and `apiweld heal` shows you which lines of your code break.
+
+Apiweld runs on your machine. There's no account, no hosted service, and no telemetry. It works on its own from the terminal, and it's built for coding agents such as Claude Code and Cursor, which call the same commands through [MCP](/mcp).
+
+## Why it exists
+
+When a coding agent needs to call a third-party API, it usually does one of three things:
+
+- **Writes `fetch` calls from memory.** Field names come from training data, not the current spec. Nothing is typed, so a wrong field shows up in production.
+- **Installs the vendor SDK.** You get hundreds of endpoints to call a few. Many APIs don't have a TypeScript SDK at all, and the ones that exist can trail the spec.
+- **Generates a client from the whole OpenAPI spec.** Now tens of thousands of generated lines sit in the repo, most of them for endpoints you never call.
+
+None of these tell you when the provider changes an endpoint you depend on. Apiweld handles all three problems: the agent can search for the right endpoint, the client is typed against the current spec, it only covers what you call, and changes to those endpoints are caught before they reach production.
+
+## How it works
+
+<Steps>
+  <Step title="Find">
+    Search a local catalog of APIs and their endpoints by what you want to do: `apiweld search "refund a payment" --ops`.
+  </Step>
+  <Step title="Add">
+    `apiweld add stripe PostRefunds` records the endpoint in `apiweld.config.ts`, generates a typed client under `src/apis/stripe/`, and pins the spec in `apiweld.lock.json`.
+  </Step>
+  <Step title="Check">
+    `apiweld check` fetches the latest spec and reports only changes to the endpoints you use, labelled breaking, risky, or safe.
+  </Step>
+  <Step title="Heal">
+    For a breaking change, `apiweld heal` regenerates the client off to the side, runs the TypeScript compiler, and lists every call site that breaks. Your agent fixes them. You review and merge.
+  </Step>
+</Steps>
+
+## Terms used in these docs
+
+| Term | Meaning |
+| --- | --- |
+| **Spec** | The provider's OpenAPI (or Swagger 2.0) document. Apiweld reads it but never runs anything in it. |
+| **Catalog** | A local search index of APIs and their operations, stored in `~/.apiweld/catalog.db`. |
+| **Operation** | One endpoint, written as an operation id (`PostRefunds`) or as `METHOD /path` (`POST /v1/refunds`). |
+| **Slice** | The operations you selected plus every parameter and schema they reference. Generation and drift checks only look at the slice. |
+| **Weld** | Generate a client for a slice and write it into your repo. `apiweld add` welds. |
+| **Lock** | `apiweld.lock.json`. It records the exact spec, slice, and generator version behind your client, so builds are reproducible. |
+| **Drift** | A change in the upstream spec that affects your slice. Changes elsewhere in the spec are ignored. |
+| **Heal plan** | A report of a breaking change: what changed, which call sites no longer compile, and hints for the fix. |
+
+## What it generates
+
+Apiweld doesn't write its own code generator. TypeScript clients come from [Hey API](https://heyapi.dev) (`@hey-api/openapi-ts`), with optional Zod validators. Go clients come from [oapi-codegen](https://github.com/oapi-codegen/oapi-codegen). Spec diffs and breaking-change rules come from [oasdiff](https://www.oasdiff.com). Apiweld supplies the catalog, the slicing, the lockfile, and the workflow around them.
+
+Next: the [Quickstart](/quickstart) takes you from an empty repo to a working client.

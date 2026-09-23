@@ -1,33 +1,68 @@
 ---
 title: MCP tools
-description: The stdio MCP server agents use to search, weld, check drift, and fetch a heal plan.
+description: Connect Apiweld to Claude Code, Cursor, or any MCP client so your agent can search APIs, add endpoints, check drift, and fix breaking changes.
 sidebar:
-  order: 4
+  order: 3
   label: MCP tools
 ---
 
-`apiweld mcp` speaks Model Context Protocol on standard input and output. It does not listen on a port. Register it once in the agent's config. `apiweld init --agents` prints a snippet for the common ones.
+`apiweld mcp` runs Apiweld as a [Model Context Protocol](https://modelcontextprotocol.io) server. Your coding agent starts it as a subprocess and talks to it over stdin and stdout. It doesn't open a port.
 
-Each tool is one CLI command. Anything the agent does, you can rerun from a shell. See the [CLI](/cli) for flags those commands share (`--json`, `--offline`).
+Every tool runs the same code as a [CLI](/cli) command, so anything the agent does, you can run again from a shell.
+
+## Connect your agent
+
+<Tabs>
+  <TabItem label="Claude Code">
+
+```sh
+claude mcp add apiweld -- npx apiweld mcp
+```
+
+  </TabItem>
+  <TabItem label="Cursor">
+
+Add this to `.cursor/mcp.json` in your project:
+
+```json title=".cursor/mcp.json"
+{
+  "mcpServers": {
+    "apiweld": {
+      "command": "npx",
+      "args": ["apiweld", "mcp"]
+    }
+  }
+}
+```
+
+  </TabItem>
+  <TabItem label="Other clients">
+
+Any client that supports stdio servers works. Use `npx` as the command and `apiweld mcp` as the arguments. If `apiweld` is installed in the project, `apiweld` with the argument `mcp` works too.
+
+  </TabItem>
+</Tabs>
+
+Then run `npx apiweld init --agents`. It adds a short note to `AGENTS.md` and `CLAUDE.md` telling the agent to use Apiweld for third-party APIs instead of writing HTTP calls by hand or installing a full SDK. You can edit the note freely. Apiweld won't add it again once it's there.
 
 ## Tools
 
-| Tool | CLI | Returns |
+| Tool | Same as | What the agent gets back |
 | --- | --- | --- |
-| `search_apis` | `apiweld search <query>` | Ranked APIs: one-line description, auth style, and how fresh the spec is. |
-| `search_operations` | `apiweld search --ops <query> [--api id]` | Matching endpoints, across the catalog or inside one API. |
-| `describe_operation` | `apiweld show <api> <operationId or "METHOD path">` | A compact signature shaped like the call the agent will write. |
-| `add_operations` | `apiweld add <api> <op>…` | Updates config, generates the client, returns the import path and an example call. An operation id and `METHOD /path` select the same call. |
-| `remove_operations` | `apiweld remove <api> "<op>"…` | Shrinks the slice and regenerates. |
-| `check_drift` | `apiweld check [api]` | Findings for selected operations only, already classified. |
-| `get_heal_plan` | `apiweld heal <api>` | Findings, affected call sites, and suggested edits. |
-| `verify` | `apiweld verify` | Type-check result, plus the optional test command. |
+| `search_apis` | `apiweld search <query>` | Matching APIs, with a one-line description and how recently the spec changed. |
+| `search_operations` | `apiweld search <query> --ops [--api id]` | Matching endpoints, across all APIs or within one. |
+| `describe_operation` | `apiweld show <api> <operation>` | A short TypeScript-style signature of the endpoint (see below). |
+| `add_operations` | `apiweld add <api> <operation>…` | Updates the config and generates the client. Returns the import path and an example call. |
+| `remove_operations` | `apiweld remove <api> <operation>…` | Removes endpoints and regenerates the client. |
+| `check_drift` | `apiweld check [api]` | Upstream changes to the selected endpoints, labelled breaking, risky, or safe. |
+| `get_heal_plan` | `apiweld heal <api>` | For a breaking change: what changed, which call sites break, and hints for the fix. |
+| `verify` | `apiweld verify` | The type-check result, plus your test command's result if you configured one. |
 
-`check_drift` arrives with the watch release. `get_heal_plan` and `verify` arrive with the heal release. The search and weld tools are the first cut. The [roadmap](/roadmap) spells out which release is done when which loop works.
+An operation can be an operation id (`PostRefunds`) or `METHOD /path` (`POST /v1/refunds`).
 
-## What describe_operation spends tokens on
+## Compact signatures
 
-The default payload is a signature, not a schema dump. Nested types stay collapsed until the agent passes a depth.
+Full OpenAPI schemas are long and eat context. `describe_operation` returns the endpoint in the shape of the code the agent is about to write:
 
 ```ts
 // stripe · POST /v1/refunds · auth: bearer (secret key)
@@ -40,19 +75,15 @@ createRefund(body: {
 }): Promise<Refund>           // errors: 400, 401, 402, 404
 ```
 
-`--depth n` on `apiweld show` (and the matching tool argument) expands nested types when the agent actually needs them.
+Nested types stay collapsed. The agent can pass a `depth` to expand them, the same as `apiweld show --depth n`.
 
-## Where the server is allowed to write
+## What the server can change
 
-The process may write only:
+The server only writes to:
 
-- the configured `output` directory (generated clients)
+- the `output` directory with the generated clients
 - `apiweld.config.ts`
 - `apiweld.lock.json`
-- `.apiweld/` (reports and the runtime drift log)
+- `.apiweld/`, which holds reports and the runtime drift log
 
-It does not edit application source. Applying a heal plan's call-site fixes is the agent's job, in the editor, where you can review the diff.
-
-## Onboarding a repo
-
-`apiweld init --agents` adds a short instruction: for third-party HTTP, use Apiweld instead of writing the calls by hand or depending on a full SDK. That file is yours to edit. The server does not rewrite it again on later runs.
+It never edits your application code. When a breaking change needs call sites updated, the agent makes those edits itself, as normal changes you can review.

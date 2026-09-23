@@ -1,6 +1,6 @@
 ---
 title: Quickstart
-description: Go from an empty repo to a committed, two-endpoint TypeScript client — from the terminal or from a coding agent.
+description: Go from an empty repo to a committed, typed Stripe refund client, from the terminal or through your coding agent.
 sidebar:
   order: 2
   label: Quickstart
@@ -9,83 +9,127 @@ sidebar:
     variant: tip
 ---
 
-This is the shortest path that produces a real client. The example selects two Stripe refund operations. Swap in any API the catalog knows.
+This guide adds a typed client for two Stripe endpoints: create a refund and retrieve a refund. The steps are the same for any API with an OpenAPI spec.
 
-You need Node.js 20 or newer. Apiweld is one package: the CLI and the MCP server are the same program.
+You need Node.js 20 or newer. Install Apiweld as a dev dependency. The CLI and the MCP server are the same package.
 
 <PackageManagers pkg="apiweld" dev />
 
-<Aside type="note" title="What this does not set up">
-  There is no account to create and no project to provision in a cloud console. `apiweld init` writes files in the repo you are already in.
+<Aside type="note" title="Nothing to sign up for">
+  Apiweld has no account or cloud project. Every command writes files in the repo you run it in, or in its cache at `~/.apiweld/`.
 </Aside>
 
-## Initialize
+## Add your first client
 
 <Steps>
   <Step title="Create the config">
 
-`apiweld init` writes `apiweld.config.ts` and adds `.apiweld/` to `.gitignore`. Pass `--agents` to append a short section to `AGENTS.md` or `CLAUDE.md` and to print the MCP config snippet for common agents.
-
-In a workspace — a `package.json` `workspaces` field, or `pnpm-workspace.yaml` — `init` lists the packages and asks where generated clients should go. Press Enter to keep `src/apis`, or pass `--output` to skip the prompt. The path is relative to the directory you run `init` in. Outside a workspace, `init` writes `output: "src/apis"` without asking.
-
-`bun run` and `npm run` execute scripts from the package root, so a script started in a package still writes the config there. Point `--cwd` at the package when the config should live next to that app:
-
 ```sh
 npx apiweld init --agents
+```
+
+This writes `apiweld.config.ts` and adds `.apiweld/` (local reports and logs) to `.gitignore`. `--agents` also adds a short section to both `AGENTS.md` and `CLAUDE.md`, creating them if needed. It tells your agent to use Apiweld instead of writing HTTP calls by hand and includes an MCP config snippet.
+
+Generated clients go in `src/apis/` by default. In a monorepo, `init` lists your workspace packages and asks where they should go. Press Enter to keep the default, or pass `--output`:
+
+```sh
 npx apiweld init --output packages/web/src/apis
 ```
 
-The agent note tells the model to reach for Apiweld instead of hand-writing `fetch` or installing a full vendor SDK.
+The config is written to the directory you run `init` in. To keep it next to one app in a monorepo, run `init` from that app's folder.
 
   </Step>
-  <Step title="Add the provider">
+  <Step title="Add the API to your catalog">
 
-Index one spec when you need it. `catalog add` fetches that OpenAPI document, stores it in the local catalog, and leaves every other provider alone. A GitHub `blob` URL is fetched as the raw file.
+Search runs against a local catalog. Add the providers your project uses by pointing Apiweld at their OpenAPI spec:
 
 ```sh
 npx apiweld catalog add stripe https://github.com/stripe/openapi/blob/master/latest/openapi.spec3.json
 ```
 
-`catalog sync` still downloads the prebuilt snapshot from a GitHub release and checks its SHA-256. `catalog build` indexes APIs.guru on this machine. That full build is the slow path. Agents should add the providers a repo actually calls.
+GitHub `blob` links are fine. Apiweld fetches the raw file. To index the whole [APIs.guru](https://apis.guru) directory up front, run `catalog sync` to download a prebuilt snapshot, or `catalog build` to index it yourself (slow).
 
   </Step>
-  <Step title="Find the operation">
+  <Step title="Find the endpoints">
 
-Search hits API titles and operation summaries. `--ops` searches endpoints. `show` prints a compact TypeScript-shaped signature instead of a raw OpenAPI blob. Pass an operation id or `METHOD /path`.
+Search by what you want to do. `--ops` searches endpoints instead of APIs.
 
 ```sh
 npx apiweld search "refund a payment" --ops
+```
+
+`show` prints an endpoint as a short TypeScript signature, which is easier to read than raw OpenAPI:
+
+```sh
 npx apiweld show stripe PostRefunds
 ```
 
   </Step>
-  <Step title="Weld the client">
+  <Step title="Generate the client">
 
-`add` records the operations, generates the client, and updates the lock. An operation id and its `METHOD /path` select the same call. The config and the lockfile store `METHOD /path`. The config key is the name you will import. If that provider is already in the catalog, you can omit `--source`.
+Pass the endpoints you want, either as operation ids or as `METHOD /path`. These two commands do the same thing:
 
 ```sh
 npx apiweld add stripe PostRefunds GetRefundsRefund
 npx apiweld add stripe "POST /v1/refunds" "GET /v1/refunds/{refund}"
 ```
 
-You should now have a client under the configured `output` directory (default `src/apis/stripe/`), a lock entry, and a config block you can read in review. Commit all three. Generated code is part of the project.
+You now have three changes to commit:
+
+- `apiweld.config.ts` lists the two endpoints under `stripe`.
+- `src/apis/stripe/` contains the generated client.
+- `apiweld.lock.json` pins the exact spec it was built from.
+
+The key (`stripe`) is the folder name and the name you import from. Pass `--as` to choose a different one.
+
+  </Step>
+  <Step title="Call it">
+
+The client exports one function per endpoint, named after the operation id, plus the request and response types.
+
+```ts
+import { client } from "./apis/stripe/client.gen";
+import { postRefunds } from "./apis/stripe";
+
+client.setConfig({
+  headers: { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}` },
+});
+
+const { data: refund, error } = await postRefunds({
+  body: { payment_intent: "pi_123", reason: "requested_by_customer" },
+});
+```
+
+Your API keys stay in your environment. Apiweld never sees them.
 
   </Step>
 </Steps>
 
-## What the agent does instead
+## Let your agent do it
 
-Register the server once (`apiweld mcp`, stdio, no port). The agent then calls `search_operations`, `describe_operation`, and `add_operations`. Those tools map one-to-one onto the commands above. The tool result includes the import path and an example call, so the agent can wire the client without rereading the spec.
+Register the MCP server with your agent once. For Claude Code:
 
-## Generate again without the network
+```sh
+claude mcp add apiweld -- npx apiweld mcp
+```
 
-`apiweld generate` rebuilds from the lock and the content-addressed spec cache. Use it in CI when you want to prove the committed client still matches the lock.
+For Cursor and other clients, see [MCP tools](/mcp). After that, you can ask for what you need ("refund a Stripe payment when an order is cancelled") and the agent searches, adds the endpoints, and writes the call. Each tool matches a command from this guide, so you can re-run anything the agent did yourself.
+
+## Keep it up to date
+
+Run `check` whenever you like, or on a schedule in CI. It only reports changes to the endpoints in your config.
+
+```sh
+npx apiweld check
+```
+
+To rebuild the client from the lock without touching the network, for example in CI to confirm the committed files match, run:
 
 ```sh
 npx apiweld generate
 npx apiweld verify
 ```
 
-`verify` runs the TypeScript compiler against the project's `tsconfig.json`, then an optional test command if you configured one.
+`verify` type-checks the project with its own `tsconfig.json`, then runs your test command if you configured one.
 
-Next: the [CLI reference](/cli), or [how drift is classified](/drift) once the client is in use.
+Next: [how drift is classified](/drift), or the full [CLI reference](/cli).

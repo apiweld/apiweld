@@ -1,16 +1,19 @@
 ---
 title: Config and lockfile
-description: apiweld.config.ts is what you mean. apiweld.lock.json is what was fetched, sliced, and generated.
+description: apiweld.config.ts says which endpoints you want. apiweld.lock.json records exactly what was built. Commit both.
 sidebar:
   order: 5
   label: Config and lockfile
 ---
 
-Two files. You write one. Apiweld writes the other. Both are committed.
+Apiweld keeps a project's state in two files, both committed:
+
+- **`apiweld.config.ts`** says what you want: which APIs, which endpoints, and how to generate them. You (or your agent) edit it.
+- **`apiweld.lock.json`** records what was actually built: the exact spec, the endpoints, and the tool versions. Apiweld writes it. Don't edit it by hand.
+
+This works like `package.json` and a package-manager lockfile. The config states intent, and the lock makes every build reproducible.
 
 ## Config
-
-`apiweld.config.ts` is loaded with `c12` and `jiti`, so there is no compile step. `defineConfig` is the typed helper exported by the `apiweld` package.
 
 ```ts title="apiweld.config.ts"
 import { defineConfig } from "apiweld";
@@ -22,9 +25,12 @@ export default defineConfig({
     client: "fetch",
     validators: "zod",
   },
+  verify: {
+    test: "bun run test",
+  },
   apis: {
     stripe: {
-      source: "apisguru:stripe.com",
+      source: "https://raw.githubusercontent.com/stripe/openapi/master/latest/openapi.spec3.json",
       operations: [
         "POST /v1/refunds",
         "GET /v1/refunds/{refund}",
@@ -32,59 +38,83 @@ export default defineConfig({
       policy: { autoRegenerate: "safe" },
     },
     github: {
-      source: "https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json",
+      source: "apisguru:github.com",
       operations: ["GET /repos/{owner}/{repo}/pulls"],
     },
   },
 });
 ```
 
-`output` is the directory of generated clients, one folder per API key, relative to the config file. The default is `src/apis`. In a workspace, `apiweld init` asks for this path. `generator.client` is passed through to Hey API (`fetch`, `axios`, `ky`, `ofetch`, `next`, `nuxt`, and the other clients that package supports). `validators: "zod"` turns on the Zod plugin and, later, the [runtime drift log](/drift).
+The file is TypeScript, so your editor type-checks and autocompletes it, and it can hold functions such as [patches](#fix-a-broken-spec). There's no build step: Apiweld loads it directly.
 
-Optional fields (`patch`, `levelOverrides`, `allowRemoteHosts`) are omitted when they are unset. `add` does not write `undefined` into the file.
+After the first `generate`, Apiweld writes `apiweld-env.d.ts`, which gives you autocomplete for the operations of every API already in the lock.
 
-`policy.autoRegenerate` is `"safe"` or `"never"`. `"safe"` lets `apiweld update` regenerate when the only findings are safe. It never regenerates over a breaking finding. See [Drift detection](/drift).
+### Top-level options
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `output` | `"src/apis"` | Where generated clients go, relative to the config file. Each API gets its own folder, named after its key. |
+| `generator.name` | `"hey-api"` | `"hey-api"` generates TypeScript with [Hey API](https://heyapi.dev). `"oapi-codegen"` generates Go. |
+| `generator.client` | `"fetch"` | The HTTP client for Hey API: `fetch`, `axios`, `ky`, `ofetch`, `next`, `nuxt`, or any other client Hey API supports. |
+| `generator.validators` | off | `"zod"` generates Zod schemas and enables the [runtime drift log](/drift#runtime-drift). |
+| `generator.options` | — | Extra options passed through to the generator. |
+| `verify.test` | — | A command for `apiweld verify` to run after its type-check, such as `"bun run test"`. |
+
+### Per-API options
+
+Each key under `apis` becomes a folder under `output` and the name you import from.
+
+| Option | Meaning |
+| --- | --- |
+| `source` | Where the spec comes from. See [Sources](#sources). |
+| `operations` | The endpoints to generate, as `METHOD /path`. `add` and `remove` keep this list up to date. |
+| `policy.autoRegenerate` | `"safe"` lets `apiweld update` regenerate by itself when every change is safe. `"never"` always waits for you. Breaking changes are never applied automatically. |
+| `levelOverrides` | Re-labels specific change types for this API, for example `{ "response-optional-property-removed": "risky" }`. Useful when a provider's habits make one rule noisy. |
+| `allowRemoteHosts` | Other hosts the spec may load `$ref`s from. By default, only the spec's own host is allowed. |
+| `patch` | Functions that fix a broken spec before generation. See [below](#fix-a-broken-spec). |
 
 ### Sources
 
-| Source | Resolves by |
+| Source | Where the spec comes from |
 | --- | --- |
-| `https://…` | A spec URL. Stored as the URL itself, with no `url:` prefix. A GitHub `blob` page is fetched as the raw file. |
-| `file:<path>` | A spec on disk. This is the only prefixed form for a local file. Use it for private or internal APIs. |
-| `apisguru:<id>` | The APIs.guru directory entry. When the spec carries `x-origin`, Apiweld fetches the provider's URL so drift is not stuck behind the mirror. |
-| `wellknown:<domain>` | Later. Probes `https://<domain>/.well-known/api-catalog` (RFC 9727). |
+| `https://…` | That URL. GitHub `blob` links are fetched as the raw file. |
+| `file:<path>` | A spec on disk. Use this for private or internal APIs. |
+| `apisguru:<id>` | The [APIs.guru](https://apis.guru) directory entry. When the entry records the provider's original URL (`x-origin`), Apiweld fetches from the provider directly, so you see changes as soon as they're published. |
+| `wellknown:<domain>` | The API catalog the provider publishes at `https://<domain>/.well-known/api-catalog` ([RFC 9727](https://www.rfc-editor.org/rfc/rfc9727)). |
 
-An operation in the `operations` array is stored as `METHOD /path`. You can pass an operation id to `add`, `remove`, and `show`. Apiweld resolves it against the spec and writes the method and path.
+### Fix a broken spec
 
-### Patches
-
-Some upstream specs are wrong in ways that block generation. A `patch` function on that API is forwarded to Hey API's `parser.patch`. It lives in your config, which means you wrote it. Specs are never a source of executable code.
+Some upstream specs have mistakes that break generation. Add a `patch` to that API to fix them. The functions go to Hey API's [`parser.patch`](https://heyapi.dev/openapi-ts/configuration/parser#patch).
 
 ```ts
-patch: {
-  schemas: {
-    "pull-request-simple": (schema) => {
-      // repair the upstream schema, then return it
-      return schema;
+github: {
+  source: "apisguru:github.com",
+  operations: ["GET /repos/{owner}/{repo}/pulls"],
+  patch: {
+    schemas: {
+      "pull-request-simple": (schema) => {
+        // fix the schema, then return it
+        return schema;
+      },
     },
   },
 },
 ```
 
-### AST edits
+Patches are code you wrote in your own config. Apiweld never runs code that comes from a spec.
 
-`apiweld add` and `add_operations` change the operations list by editing the TypeScript AST with magicast. Comments and functions stay. If the object is built dynamically and cannot be edited safely, Apiweld prints the snippet and does not write the file.
+### How add and remove edit the file
+
+`apiweld add` and `remove` (and the matching MCP tools) edit `apiweld.config.ts` in place and keep your formatting, comments, and functions. If the config is built dynamically and can't be edited safely, Apiweld prints the snippet to paste in instead of rewriting the file.
 
 ## Lockfile
-
-`apiweld.lock.json` is machine state. Do not edit it. Keys are sorted. Operations are sorted. A lock diff means a spec, a slice, or a generator changed — not a formatting pass.
 
 ```json title="apiweld.lock.json"
 {
   "lockVersion": 1,
   "apis": {
     "stripe": {
-      "resolvedUrl": "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json",
+      "resolvedUrl": "https://raw.githubusercontent.com/stripe/openapi/master/latest/openapi.spec3.json",
       "specHash": "sha256:9f2c…e41a",
       "specVersion": "2026-08-27",
       "fetchedAt": "2026-09-23T07:40:12Z",
@@ -100,23 +130,26 @@ patch: {
 }
 ```
 
-Three hashes, three questions:
+Keys and operations are sorted, so a change to the lock always means something actually changed, not just the ordering.
 
-| Hash | Changes when | What Apiweld does |
+The lock has three hashes, and each one answers a different question:
+
+| Hash | What it covers | When it changes |
 | --- | --- | --- |
-| `specHash` | The provider changed anything in the spec | Re-slice, then compare slice hashes. |
-| `sliceHash` | Something in your selection changed | Run the engine diff and classify. This is the only hash that raises a drift alert. |
-| `outputHash` | Generated files differ from what Apiweld would emit | Warn that a hand-edit will be overwritten on the next generate. |
+| `specHash` | The whole upstream spec | The provider changed anything. Apiweld then compares `sliceHash` to see whether it matters to you. |
+| `sliceHash` | Only your endpoints and the schemas they use | Something you use changed. This is the only hash that triggers a drift report. |
+| `outputHash` | The generated files | Someone edited the generated code by hand. Apiweld warns you, because the next `generate` will overwrite the edit. |
 
-`resolvedUrl` is the URL actually fetched (often the upstream origin, not the directory mirror). `etag` is sent on the next conditional GET. `generator` and `engine` pin the tools that produced the client, so a regenerate is comparable.
+The other fields: `resolvedUrl` is the URL that was actually fetched. `etag` lets the next check skip the download when nothing changed. `generator` and `engine` record the tool versions, so a rebuild produces the same output.
 
-## Layout
+## Files in your project
 
 ```text
 apiweld.config.ts
 apiweld.lock.json
+apiweld-env.d.ts          # operation autocomplete for the config
 src/apis/
-  stripe/                 # generated — read it, do not maintain it by hand
+  stripe/                 # generated: read it, don't edit it
     sdk.gen.ts
     types.gen.ts
     zod.gen.ts
@@ -124,18 +157,37 @@ src/apis/
   github/
 .apiweld/                 # gitignored
   reports/                # drift reports and heal plans, JSON and Markdown
-  drift.log.jsonl         # runtime response mismatches, shapes only
+  drift.log.jsonl         # runtime drift log (shapes only, never values)
 ```
 
-## Cache
+Commit the generated clients. That way reviewers see every change, agents can read the code, and CI doesn't need the network to build.
+
+## Machine settings
+
+Apiweld also keeps a cache that all your projects share:
 
 ```text
 ~/.apiweld/
-  settings.json           # proxy, offline default, extra catalogs
-  catalog.db              # SQLite + FTS5
+  settings.json           # optional, see below
+  catalog.db              # the search index
   specs/
-    9f2c…e41a.json        # normalized, immutable, named by spec hash
-  http-cache.json         # ETag and Last-Modified per URL
+    9f2c…e41a.json        # every spec version fetched, named by its hash
+  http-cache.json         # ETags, so unchanged specs aren't downloaded again
 ```
 
-The spec store is content-addressed. The lock pins a hash, so an old version is still on disk for a diff or a reproducible generate after the provider has moved on.
+Old spec versions stay in `specs/`, so Apiweld can diff against the version in your lock and rebuild it offline even after the provider has moved on.
+
+`settings.json` is optional:
+
+```json title="~/.apiweld/settings.json"
+{
+  "offline": false,
+  "proxy": "http://proxy.internal:3128",
+  "catalogs": [
+    { "name": "internal", "path": "/srv/specs" },
+    { "name": "partners", "urls": ["https://partner.example.com/openapi.json"] }
+  ]
+}
+```
+
+`catalogs` adds your own specs to search, next to the public ones. Each result is labelled with the catalog it came from.
