@@ -5,10 +5,14 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  addCatalogApi,
   addOperations,
   buildCatalog,
+  catalogSpecUrl,
+  getApi,
   checkApis,
   editApiEntry,
+  findWorkspace,
   generateLocked,
   healApi,
   initProject,
@@ -24,6 +28,7 @@ import {
   searchApis,
   searchOperations,
   showApi,
+  resolveOperationRefs,
   sliceDocument,
   syncCatalog,
   updateApis,
@@ -76,6 +81,37 @@ describe("engine", () => {
 });
 
 describe("catalog and search", () => {
+  it("accepts a bare spec URL and still reads a url: prefix", async () => {
+    const { rt } = tempProject();
+    await expect(resolveSource("https://example.com/openapi.json", rt)).resolves.toEqual({
+      kind: "http",
+      url: "https://example.com/openapi.json",
+    });
+    await expect(resolveSource("url:https://example.com/openapi.json", rt)).resolves.toEqual({
+      kind: "http",
+      url: "https://example.com/openapi.json",
+    });
+  });
+
+  it("turns a GitHub blob URL into the raw spec URL", () => {
+    expect(catalogSpecUrl("https://github.com/stripe/openapi/blob/master/latest/openapi.spec3.json")).toBe(
+      "https://raw.githubusercontent.com/stripe/openapi/master/latest/openapi.spec3.json",
+    );
+  });
+
+  it("adds one provider without replacing the rest of the catalog", async () => {
+    const { cacheDir, rt } = tempProject();
+    await buildCatalog(rt, { from: path.join(root, "fixtures/catalog/manifest.json") });
+    const added = await addCatalogApi(rt, { id: "stripe", url: `file:${stripeV1}` });
+    expect(added.operations).toBeGreaterThan(0);
+    expect(added.source).toBe(`file:${stripeV1}`);
+    expect(getApi(cacheDir, "pets.com")?.id).toBe("pets.com");
+    const again = await addCatalogApi(rt, { id: "stripe", url: `file:${stripeV1}` });
+    expect(again.operations).toBe(added.operations);
+    const hits = searchOperations(cacheDir, "refund a payment", "stripe");
+    expect(hits.filter((hit) => hit.path === "/v1/refunds")).toHaveLength(1);
+  });
+
   it("finds a Stripe refund and ignores pets", async () => {
     const { cacheDir, rt } = tempProject();
     const built = await buildCatalog(rt, { from: path.join(root, "fixtures/catalog/manifest.json") });
@@ -300,6 +336,8 @@ describe("widen", () => {
     const doc = JSON.parse(fs.readFileSync(stripeV1, "utf8")) as Record<string, unknown>;
     const slice = sliceDocument(doc, ["POST /v1/refunds"]);
     expect(slice.missing).toEqual([]);
+    expect(resolveOperationRefs(doc, ["createRefund"]).operations).toEqual(["POST /v1/refunds"]);
+    expect(resolveOperationRefs(doc, ["getRefund"]).operations).toEqual(["GET /v1/refunds/{refund}"]);
     expect(slice.schemas).toContain("Refund");
     const file = writeDriftRuntime(path.join(cwd, "src/apis/stripe"), doc, ["POST /v1/refunds"]);
     process.env.APIWELD_DRIFT_LOG = path.join(cwd, ".apiweld/drift.log.jsonl");
@@ -348,6 +386,37 @@ export default defineConfig({
   });
 });
 
+describe("workspace init", () => {
+  it("finds the nearest workspace and lists its packages", () => {
+    fs.mkdirSync(path.join(root, ".tmp"), { recursive: true });
+    const cwd = fs.mkdtempSync(path.join(root, ".tmp", "ws-"));
+    dirs.push(cwd);
+    fs.mkdirSync(path.join(cwd, "apps", "web"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, "apps", "web", "package.json"), "{}\n");
+    fs.writeFileSync(path.join(cwd, "package.json"), JSON.stringify({ workspaces: ["apps/*"] }));
+    const found = findWorkspace(path.join(cwd, "apps", "web"));
+    expect(found?.root).toBe(cwd);
+    expect(found?.packages).toEqual(["apps/web"]);
+
+    const pnpm = fs.mkdtempSync(path.join(root, ".tmp", "pnpm-"));
+    dirs.push(pnpm);
+    fs.mkdirSync(path.join(pnpm, "packages", "cli"), { recursive: true });
+    fs.writeFileSync(path.join(pnpm, "packages", "cli", "package.json"), "{}\n");
+    fs.writeFileSync(path.join(pnpm, "pnpm-workspace.yaml"), "packages:\n  - \"packages/*\"\n");
+    expect(findWorkspace(pnpm)?.packages).toEqual(["packages/cli"]);
+  });
+
+  it("writes a chosen output directory and refuses one outside the project", async () => {
+    const { cwd, rt } = tempProject();
+    await initProject(rt, { output: "packages/web/src/apis" });
+    const config = fs.readFileSync(path.join(cwd, "apiweld.config.ts"), "utf8");
+    expect(config).toContain('"packages/web/src/apis"');
+    await expect(initProject(runtimeFrom(path.join(cwd, "nested"), { cacheDir: rt.cacheDir }), { output: "../outside" })).rejects.toThrow(
+      /inside the project/,
+    );
+  });
+});
+
 describe("cli and mcp", () => {
   it("lists the agent tools and searches through the CLI", async () => {
     expect(toolNames()).toEqual([
@@ -367,5 +436,26 @@ describe("cli and mcp", () => {
     const code = await execute(["search", "refund a payment", "--ops", "--json"]);
     expect(code).toBe(0);
     process.env.APIWELD_CACHE_DIR = previous;
+    const project = tempProject();
+    await initProject(project.rt);
+    const previousCwd = process.cwd();
+    process.chdir(project.cwd);
+    try {
+      const added = await execute([
+        "add",
+        "stripe",
+        "POST /v1/refunds",
+        "GET /v1/refunds/{refund}",
+        "--source",
+        `file:${stripeV1}`,
+      ]);
+      expect(added).toBe(0);
+      const config = fs.readFileSync(path.join(project.cwd, "apiweld.config.ts"), "utf8");
+      expect(config).toContain("POST /v1/refunds");
+      expect(config).not.toContain('"stripe"');
+      expect(config).not.toContain("undefined");
+    } finally {
+      process.chdir(previousCwd);
+    }
   });
 });

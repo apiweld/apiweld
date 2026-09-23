@@ -68,7 +68,7 @@ export function resolveEnginePath(): string {
     dir = parent;
   }
   throw new ApiweldError(
-    "apiweld-engine binary not found. Run `pnpm engine:build` or set APIWELD_ENGINE_PATH.",
+    "apiweld-engine binary not found. Run `bun run engine:build` or set APIWELD_ENGINE_PATH.",
   );
 }
 

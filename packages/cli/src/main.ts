@@ -1,12 +1,15 @@
 import {
+  addCatalogApi,
   addOperations,
   ApiweldError,
   buildCatalog,
   checkApis,
+  findWorkspace,
   generateLocked,
   healApi,
   initProject,
   loadProjectConfig,
+  projectPaths,
   removeOperations,
   runtimeFrom,
   searchApis,
@@ -18,9 +21,11 @@ import {
   type ChangeClass,
 } from "@apiweld/core";
 import { startMcp } from "@apiweld/mcp";
+import fs from "node:fs";
 import path from "node:path";
+import readline from "node:readline/promises";
 import { pathToFileURL } from "node:url";
-import { defineCommand, runCommand } from "citty";
+import { defineCommand, renderUsage, runCommand, type CommandDef, type Resolvable } from "citty";
 import { registerGenerators } from "./register.js";
 
 registerGenerators();
@@ -34,6 +39,16 @@ function runtime(cwd: string, offline?: boolean) {
   return runtimeFrom(cwd, { offline });
 }
 
+function extraPositionals(argv: string[], ...taken: Array<string | undefined>): string[] {
+  const rest = [...argv];
+  for (const value of taken) {
+    if (!value) continue;
+    const index = rest.indexOf(value);
+    if (index >= 0) rest.splice(index, 1);
+  }
+  return rest;
+}
+
 function print(json: boolean, data: unknown, text: string): void {
   if (json) console.log(JSON.stringify(data, null, 2));
   else if (text) console.log(text);
@@ -41,14 +56,45 @@ function print(json: boolean, data: unknown, text: string): void {
 
 const init = defineCommand({
   meta: { name: "init", description: "Create apiweld.config.ts and ignore .apiweld/" },
-  args: { ...shared, agents: { type: "boolean", description: "Write agent instructions and an MCP snippet" } },
-  run({ args }) {
-    return initProject(runtime(process.cwd(), args.offline), { agents: args.agents }).then((result) => {
-      print(args.json, result, `Created:\n${result.created.join("\n") || "(already initialized)"}`);
-      return { exitCode: 0 };
-    });
+  args: {
+    ...shared,
+    agents: { type: "boolean", description: "Write agent instructions and an MCP snippet" },
+    output: { type: "string", description: "Directory for generated clients, relative to this project" },
+  },
+  async run({ args }) {
+    const rt = runtime(process.cwd(), args.offline);
+    const creating = !fs.existsSync(projectPaths(rt.cwd).config);
+    const output = args.output ?? (creating && !args.json ? await promptForOutput(rt.cwd) : undefined);
+    const result = await initProject(rt, { agents: args.agents, output });
+    print(args.json, result, `Created:\n${result.created.join("\n") || "(already initialized)"}`);
+    return { exitCode: 0 };
   },
 });
+
+async function promptForOutput(cwd: string): Promise<string | undefined> {
+  const workspace = findWorkspace(cwd);
+  if (!workspace) return undefined;
+  const packages = workspace.packages.slice(0, 20);
+  const more = workspace.packages.length - packages.length;
+  console.log(`Workspace ${workspace.root}`);
+  if (packages.length > 0) {
+    console.log("Packages:");
+    for (const name of packages) console.log(`  ${name}`);
+    if (more > 0) console.log(`  … ${more} more`);
+  }
+  console.log(`Generated clients are written under the output directory, relative to ${cwd}.`);
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    console.error("No terminal prompt. Using src/apis. Pass --output to choose a directory.");
+    return "src/apis";
+  }
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await rl.question("Output directory [src/apis]: ");
+    return answer.trim() || "src/apis";
+  } finally {
+    rl.close();
+  }
+}
 
 const catalogBuild = defineCommand({
   meta: { name: "build", description: "Build the local catalog from a manifest, directory, or APIs.guru" },
@@ -56,6 +102,24 @@ const catalogBuild = defineCommand({
   async run({ args }) {
     const result = await buildCatalog(runtime(process.cwd(), args.offline), { from: args.from });
     print(args.json, result, `Indexed ${result.apis} APIs and ${result.operations} operations.`);
+    return { exitCode: 0 };
+  },
+});
+
+const catalogAdd = defineCommand({
+  meta: { name: "add", description: "Index one provider spec into the local catalog" },
+  args: {
+    ...shared,
+    id: { type: "positional", required: true, description: "Provider id, such as stripe" },
+    url: { type: "positional", required: true, description: "OpenAPI spec URL" },
+  },
+  async run({ args }) {
+    const result = await addCatalogApi(runtime(process.cwd(), args.offline), { id: args.id, url: args.url });
+    print(
+      args.json,
+      result,
+      `Indexed ${result.id} (${result.title}): ${result.operations} operations.`,
+    );
     return { exitCode: 0 };
   },
 });
@@ -75,8 +139,8 @@ const catalogSync = defineCommand({
 });
 
 const catalog = defineCommand({
-  meta: { name: "catalog", description: "Build or download the local API index" },
-  subCommands: { build: catalogBuild, sync: catalogSync },
+  meta: { name: "catalog", description: "Index provider specs locally" },
+  subCommands: { add: catalogAdd, build: catalogBuild, sync: catalogSync },
 });
 
 const search = defineCommand({
@@ -115,7 +179,7 @@ const show = defineCommand({
     depth: { type: "string", description: "How far to expand nested types" },
   },
   async run({ args }) {
-    const operation = args.operation ?? args._[0];
+    const operation = args.operation;
     const result = await showApi(runtime(process.cwd(), args.offline), args.api, operation, Number(args.depth ?? 1));
     print(args.json, result, result.text);
     return { exitCode: 0 };
@@ -123,15 +187,15 @@ const show = defineCommand({
 });
 
 const add = defineCommand({
-  meta: { name: "add", description: "Add operations and generate the client" },
+  meta: { name: "add", description: "Add operations by operationId or METHOD /path and generate the client" },
   args: {
     ...shared,
     api: { type: "positional", required: true },
-    source: { type: "string", description: "file:, url:, apisguru:, or wellknown: source" },
+    source: { type: "string", description: "Spec URL, or file:, apisguru:, or wellknown: source" },
     as: { type: "string", description: "Config key to write" },
   },
   async run({ args }) {
-    const operations = args._;
+    const operations = extraPositionals(args._, args.api);
     if (operations.length === 0) throw new ApiweldError("Pass at least one \"METHOD /path\" operation");
     const result = await addOperations(runtime(process.cwd(), args.offline), {
       api: args.api,
@@ -154,7 +218,7 @@ const remove = defineCommand({
   async run({ args }) {
     const result = await removeOperations(runtime(process.cwd(), args.offline), {
       api: args.api,
-      operations: args._,
+      operations: extraPositionals(args._, args.api),
     });
     print(args.json, result, `Updated ${result.api}: ${result.operations.join(", ") || "(no operations)"}`);
     return { exitCode: 0 };
@@ -259,8 +323,42 @@ export const main = defineCommand({
   subCommands: { init, catalog, search, show, add, remove, generate, update, check, heal, verify, mcp },
 });
 
+async function resolveValue<T>(input: Resolvable<T> | undefined): Promise<T | undefined> {
+  if (typeof input === "function") return (input as () => T | Promise<T>)();
+  return input as T | undefined;
+}
+
+function positionals(argv: string[]): string[] {
+  return argv.filter((arg) => arg !== "help" && arg !== "--help" && arg !== "-h" && !arg.startsWith("-"));
+}
+
+function isHelpRequest(argv: string[]): boolean {
+  if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) return true;
+  const command = argv.find((arg) => !arg.startsWith("-"));
+  return command === "help";
+}
+
+async function usageTarget(argv: string[]): Promise<{ cmd: CommandDef; parent?: CommandDef }> {
+  const names = positionals(argv);
+  let cmd: CommandDef = main;
+  let parent: CommandDef | undefined;
+  for (const name of names) {
+    const subs = await resolveValue(cmd.subCommands);
+    const next = subs?.[name];
+    if (!next) break;
+    parent = cmd;
+    cmd = (await resolveValue(next)) ?? cmd;
+  }
+  return { cmd, parent };
+}
+
 export async function execute(argv: string[]): Promise<number> {
   try {
+    if (isHelpRequest(argv)) {
+      const target = await usageTarget(argv);
+      console.log(await renderUsage(target.cmd, target.parent));
+      return 0;
+    }
     const { result } = await runCommand(main, { rawArgs: argv });
     if (result && typeof result === "object" && "exitCode" in result) {
       return Number(result.exitCode) || 0;
@@ -270,7 +368,13 @@ export async function execute(argv: string[]): Promise<number> {
     const message = error instanceof Error ? error.message : String(error);
     const json = argv.includes("--json");
     if (json) console.log(JSON.stringify({ ok: false, error: message }));
-    else console.error(message);
+    else {
+      if (error instanceof Error && error.name === "CLIError") {
+        const target = await usageTarget(argv);
+        console.error(await renderUsage(target.cmd, target.parent));
+      }
+      console.error(message);
+    }
     return error instanceof ApiweldError ? error.exitCode : 1;
   }
 }

@@ -62,12 +62,21 @@ export async function editApiEntry(
     const current = plainEntry(apis[api]);
     const next = update(current);
     if (!next) delete apis[api];
-    else apis[api] = next;
+    else apis[api] = definedEntry(next);
     await writeFile(mod, file);
     return { edited: true };
   } catch {
     return { edited: false, snippet };
   }
+}
+
+function definedEntry(entry: ApiEntry): ApiEntry {
+  const next: ApiEntry = { source: entry.source, operations: entry.operations };
+  if (entry.policy !== undefined) next.policy = entry.policy;
+  if (entry.patch !== undefined) next.patch = entry.patch;
+  if (entry.levelOverrides !== undefined) next.levelOverrides = entry.levelOverrides;
+  if (entry.allowRemoteHosts !== undefined) next.allowRemoteHosts = entry.allowRemoteHosts;
+  return next;
 }
 
 function plainEntry(entry: ApiEntry | undefined): ApiEntry | undefined {

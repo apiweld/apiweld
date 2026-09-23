@@ -28,4 +28,4 @@ jobs:
           fail-on: breaking
 ```
 
-`command` overrides the executable. Use `pnpm exec apiweld` when the tool is installed in the repo instead of from npm.
+`command` overrides the executable. Use `bun run apiweld` when the tool is installed in the repo instead of from npm.

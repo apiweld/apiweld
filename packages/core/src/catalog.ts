@@ -3,7 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { ApiweldError } from "./errors.js";
 import { runEngine } from "./engine.js";
-import { isObject, sha256 } from "./json.js";
+import { fetchCached } from "./http.js";
+import { assertApiKey, isObject, sha256 } from "./json.js";
 import { ensureDir, readSettings, type Runtime } from "./paths.js";
 import { normalizeToStore } from "./store.js";
 
@@ -108,6 +109,66 @@ function openDatabase(cacheDir: string, reset = false): import("better-sqlite3")
     );
   `);
   return db;
+}
+
+export function catalogSpecUrl(input: string): string {
+  const trimmed = input.trim();
+  const raw = githubRawSpecUrl(trimmed);
+  if (raw) return raw;
+  if (trimmed.startsWith("file:") || /^https?:\/\//.test(trimmed)) return trimmed;
+  throw new ApiweldError(`Catalog spec must be an http(s) URL or file: path: ${input}`);
+}
+
+function githubRawSpecUrl(input: string): string | undefined {
+  let parsed: URL;
+  try {
+    parsed = new URL(input);
+  } catch {
+    return undefined;
+  }
+  if (parsed.hostname !== "github.com") return undefined;
+  const [owner, repo, kind, ref, ...rest] = parsed.pathname.split("/").filter(Boolean);
+  if (!owner || !repo || !ref || rest.length === 0) return undefined;
+  if (kind !== "blob" && kind !== "raw") return undefined;
+  return `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${rest.join("/")}`;
+}
+
+export async function addCatalogApi(
+  rt: Runtime,
+  opts: { id: string; url: string },
+): Promise<{ id: string; title: string; operations: number; source: string; specUrl: string }> {
+  assertApiKey(opts.id);
+  const specUrl = catalogSpecUrl(opts.url);
+  let specPath: string;
+  let source: string;
+  if (specUrl.startsWith("file:")) {
+    const raw = specUrl.slice("file:".length);
+    specPath = path.isAbsolute(raw) ? raw : path.resolve(rt.cwd, raw);
+    if (!fs.existsSync(specPath)) throw new ApiweldError(`Spec file not found: ${specPath}`);
+    source = `file:${specPath}`;
+  } else {
+    const fetched = await fetchCached(rt, specUrl);
+    specPath = fetched.file;
+    source = specUrl;
+  }
+  const db = openDatabase(rt.cacheDir, false);
+  clearApiRows(db, opts.id);
+  const operations = await indexSource(rt, db, {
+    id: opts.id,
+    provider: opts.id,
+    service: opts.id,
+    specPath,
+    source,
+    originUrl: specUrl.startsWith("file:") ? specPath : specUrl,
+  });
+  const row = db.prepare("SELECT title FROM apis WHERE id = ?").get(opts.id) as { title: string } | undefined;
+  db.close();
+  return { id: opts.id, title: row?.title ?? opts.id, operations, source, specUrl };
+}
+
+function clearApiRows(db: import("better-sqlite3").Database, id: string): void {
+  db.prepare("DELETE FROM operations WHERE api_id = ?").run(id);
+  db.prepare("DELETE FROM ops_fts WHERE api_id = ?").run(id);
 }
 
 export async function buildCatalog(
@@ -303,7 +364,9 @@ function sourcesFromDirectory(dir: string, cwd: string, name: string): CatalogSo
 function requireDb(cacheDir: string): import("better-sqlite3").Database {
   const file = catalogDbPath(cacheDir);
   if (!fs.existsSync(file)) {
-    throw new ApiweldError("Catalog is empty. Run `apiweld catalog build` or `apiweld catalog sync`.");
+    throw new ApiweldError(
+      "Catalog is empty. Run `apiweld catalog add <provider> <spec-url>`, `apiweld catalog build`, or `apiweld catalog sync`.",
+    );
   }
   return new Database(file, { readonly: true });
 }

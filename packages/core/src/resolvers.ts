@@ -33,28 +33,31 @@ export function loadUpstreams(): UpstreamsFile {
   return cachedUpstreams;
 }
 
+export function canonicalSource(source: string): string {
+  return source.startsWith("url:") ? source.slice("url:".length) : source;
+}
+
 export async function resolveSource(
   source: string,
   rt: Runtime,
   deps?: { fetch?: typeof fetch },
 ): Promise<ResolvedSource> {
-  if (source.startsWith("file:")) {
-    const raw = source.slice("file:".length);
+  const canonical = canonicalSource(source);
+  if (canonical.startsWith("file:")) {
+    const raw = canonical.slice("file:".length);
     const file = path.isAbsolute(raw) ? raw : path.resolve(rt.cwd, raw);
     if (!fs.existsSync(file)) throw new ApiweldError(`Spec file not found: ${file}`);
     return { kind: "file", url: file };
   }
-  if (source.startsWith("url:")) {
-    return { kind: "http", url: source.slice("url:".length) };
+  if (/^https?:\/\//.test(canonical)) return { kind: "http", url: canonical };
+  if (canonical.startsWith("apisguru:")) {
+    return resolveApisGuru(canonical.slice("apisguru:".length), rt, deps?.fetch ?? fetch);
   }
-  if (source.startsWith("apisguru:")) {
-    return resolveApisGuru(source.slice("apisguru:".length), rt, deps?.fetch ?? fetch);
-  }
-  if (source.startsWith("wellknown:")) {
-    return resolveWellKnown(source.slice("wellknown:".length), rt, deps?.fetch ?? fetch);
+  if (canonical.startsWith("wellknown:")) {
+    return resolveWellKnown(canonical.slice("wellknown:".length), rt, deps?.fetch ?? fetch);
   }
   throw new ApiweldError(
-    `Unknown source "${source}". Use file:, url:, apisguru:, or wellknown:.`,
+    `Unknown source "${source}". Use a URL, file:, apisguru:, or wellknown:.`,
   );
 }
 

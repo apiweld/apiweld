@@ -14,18 +14,31 @@ import { freshDiagnostics, identifiers, typecheckProject, withIsolatedTree, type
 import { hashDirectory, readLock, writeLock, type LockApi, type LockFile } from "./lock.js";
 import { ensureDir, projectPaths, type Runtime } from "./paths.js";
 import { getApi } from "./catalog.js";
-import { resolveSource } from "./resolvers.js";
-import { sliceDocument } from "./slicer.js";
+import { canonicalSource, resolveSource } from "./resolvers.js";
+import { resolveOperationRefs, sliceDocument } from "./slicer.js";
 import { normalizeToStore, specPath } from "./store.js";
 import { fetchCached } from "./http.js";
 import { describeOperation } from "./describe.js";
 
 const exec = promisify(execFile);
 
-const INIT_CONFIG = `import { defineConfig } from "apiweld";
+function outputDirOption(cwd: string, output: string | undefined): string {
+  const trimmed = (output ?? "src/apis").trim().replace(/\/+$/, "") || "src/apis";
+  if (trimmed.includes("\0") || /[\r\n]/.test(trimmed)) {
+    throw new ApiweldError("Output directory must be a relative path inside the project");
+  }
+  const relative = path.relative(cwd, path.resolve(cwd, trimmed));
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new ApiweldError("Output directory must stay inside the project");
+  }
+  return relative.split(path.sep).join("/");
+}
+
+function initConfig(output: string): string {
+  return `import { defineConfig } from "apiweld";
 
 export default defineConfig({
-  output: "src/apis",
+  output: ${JSON.stringify(output)},
   generator: {
     name: "hey-api",
     client: "fetch",
@@ -37,6 +50,7 @@ export default defineConfig({
   apis: {},
 });
 `;
+}
 
 const AGENTS_SECTION = `## Third-party APIs
 
@@ -54,11 +68,14 @@ Use Apiweld for third-party HTTP APIs. Search the local catalog, add only the op
 \`\`\`
 `;
 
-export async function initProject(rt: Runtime, opts: { agents?: boolean } = {}): Promise<{ created: string[] }> {
+export async function initProject(
+  rt: Runtime,
+  opts: { agents?: boolean; output?: string } = {},
+): Promise<{ created: string[] }> {
   const paths = projectPaths(rt.cwd);
   const created: string[] = [];
   if (!fs.existsSync(paths.config)) {
-    fs.writeFileSync(paths.config, INIT_CONFIG);
+    fs.writeFileSync(paths.config, initConfig(outputDirOption(rt.cwd, opts.output)));
     created.push(paths.config);
   }
   const ignore = fs.existsSync(paths.gitignore) ? fs.readFileSync(paths.gitignore, "utf8") : "";
@@ -88,9 +105,16 @@ export async function addOperations(
   const config = await loadProjectConfig(rt.cwd);
   const source = await resolveAddSource(rt, config, opts.api, key, opts.source);
   const current = config.apis[key]?.operations ?? [];
-  const operations = [...new Set([...current, ...opts.operations])].sort();
+  const loaded = await materialize(rt, { source, operations: current });
+  const spec = JSON.parse(fs.readFileSync(loaded.specPath, "utf8")) as Record<string, unknown>;
+  const selected = resolveOperationRefs(spec, opts.operations);
+  if (selected.missing.length > 0) {
+    throw new ApiweldError(`${key} is missing operations: ${selected.missing.join(", ")}`);
+  }
+  const kept = resolveOperationRefs(spec, current);
+  const operations = [...new Set([...kept.operations, ...selected.operations])].sort();
   const edited = await editApiEntry(rt.cwd, key, (existing) => ({
-    source: existing?.source || source,
+    source: canonicalSource(existing?.source || source),
     operations,
     policy: existing?.policy ?? { autoRegenerate: "safe" },
     patch: existing?.patch,
@@ -122,8 +146,14 @@ export async function removeOperations(
   const config = await loadProjectConfig(rt.cwd);
   const entry = config.apis[opts.api];
   if (!entry) throw new ApiweldError(`API ${opts.api} is not in the config`);
-  const drop = new Set(opts.operations);
-  const operations = entry.operations.filter((operation) => !drop.has(operation));
+  const loaded = await materialize(rt, entry);
+  const spec = JSON.parse(fs.readFileSync(loaded.specPath, "utf8")) as Record<string, unknown>;
+  const selected = resolveOperationRefs(spec, opts.operations);
+  if (selected.missing.length > 0) {
+    throw new ApiweldError(`${opts.api} is missing operations: ${selected.missing.join(", ")}`);
+  }
+  const drop = new Set(selected.operations);
+  const operations = resolveOperationRefs(spec, entry.operations).operations.filter((operation) => !drop.has(operation));
   await editApiEntry(rt.cwd, opts.api, (existing) => ({
     ...(existing ?? entry),
     operations,
@@ -263,14 +293,14 @@ async function resolveAddSource(
   key: string,
   explicit?: string,
 ): Promise<string> {
-  if (explicit) return explicit;
-  if (config.apis[key]?.source) return config.apis[key].source;
-  if (config.apis[requested]?.source) return config.apis[requested].source;
+  if (explicit) return canonicalSource(explicit);
+  if (config.apis[key]?.source) return canonicalSource(config.apis[key].source);
+  if (config.apis[requested]?.source) return canonicalSource(config.apis[requested].source);
   const row = getApi(rt.cacheDir, requested) ?? getApi(rt.cacheDir, key);
   if (!row) throw new ApiweldError(`No source for ${requested}. Pass --source or add it to the catalog.`);
-  if (row.source.startsWith("file:") || row.source.startsWith("url:") || row.source.startsWith("apisguru:")) {
-    return row.source.startsWith("file:") ? `file:${row.spec_url}` : row.source;
-  }
+  const source = canonicalSource(row.source);
+  if (source.startsWith("file:")) return `file:${row.spec_url}`;
+  if (/^https?:\/\//.test(source) || source.startsWith("apisguru:") || source.startsWith("wellknown:")) return source;
   return `file:${row.spec_url}`;
 }
 
@@ -295,6 +325,13 @@ export async function showApi(
     specFile = loaded.specPath;
   }
   const doc = JSON.parse(fs.readFileSync(specFile, "utf8")) as Record<string, unknown>;
+  if (operation) {
+    const selected = resolveOperationRefs(doc, [operation]);
+    if (selected.missing.length > 0 || !selected.operations[0]) {
+      throw new ApiweldError(`${api} is missing operations: ${operation}`);
+    }
+    operation = selected.operations[0];
+  }
   if (!operation) {
     const paths = isObject(doc.paths) ? doc.paths : {};
     const lines = [`# ${isObject(doc.info) ? doc.info.title : api}`, ""];

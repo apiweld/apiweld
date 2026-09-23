@@ -2,26 +2,26 @@
 
 Apiweld is a local tool for coding agents. It searches a catalog of public APIs, welds a typed client for only the operations you call, and keeps that client in sync when the upstream spec changes. Nothing calls an LLM. The only network traffic is HTTP GETs for public specs and the catalog snapshot. Project state is `apiweld.config.ts` and `apiweld.lock.json`.
 
-Apache-2.0. Requires Node.js 20+ and pnpm. The Go engine needs a Go 1.26 toolchain (the `go` command downloads it from `engine/go.mod` when it is missing).
+Apache-2.0. Requires Node.js 20+ and Bun. The Go engine needs a Go 1.26 toolchain (the `go` command downloads it from `engine/go.mod` when it is missing).
 
 ## Build
 
 ```bash
-pnpm install
-pnpm engine:build
+bun install
+bun run engine:build
 ```
 
-`pnpm engine:build` writes `engine/bin/apiweld-engine`. Set `APIWELD_ENGINE_PATH` if the binary lives somewhere else. Published installs resolve `@apiweld/engine-<platform>` instead.
+`bun run engine:build` writes `engine/bin/apiweld-engine`. Set `APIWELD_ENGINE_PATH` if the binary lives somewhere else. Published installs resolve `@apiweld/engine-<platform>` instead.
 
 ## Run
 
 From this repo:
 
 ```bash
-pnpm exec apiweld init
-pnpm exec apiweld catalog build --from fixtures/catalog/manifest.json
-pnpm exec apiweld search "refund a payment" --ops --json
-pnpm exec apiweld add stripe "POST /v1/refunds" "GET /v1/refunds/{refund}" --source file:fixtures/history/stripe/v1.json
+bun run apiweld init
+bun run apiweld catalog add stripe https://github.com/stripe/openapi/blob/master/latest/openapi.spec3.json
+bun run apiweld search "refund a payment" --ops --json
+bun run apiweld add stripe "POST /v1/refunds" "GET /v1/refunds/{refund}" --source file:fixtures/history/stripe/v1.json
 ```
 
 `init` writes `apiweld.config.ts` and ignores `.apiweld/`. `add` edits the config, slices the spec, generates a Hey API client under `src/apis/`, and writes `apiweld.lock.json`.
@@ -31,15 +31,15 @@ Other commands: `catalog sync`, `show`, `remove`, `generate`, `update`, `check`,
 Start the MCP server for an agent:
 
 ```bash
-pnpm exec apiweld mcp
+bun run apiweld mcp
 ```
 
 ## Tests
 
 ```bash
-pnpm test
-pnpm test:engine
-pnpm typecheck
+bun run test
+bun run test:engine
+bun run typecheck
 ```
 
 Tests use the specs in `fixtures/` and do not call the network.

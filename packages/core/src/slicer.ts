@@ -1,3 +1,4 @@
+import { ApiweldError } from "./errors.js";
 import { canonicalJson, isObject, operationKey, parseOperation, sha256 } from "./json.js";
 
 export interface SliceResult {
@@ -7,20 +8,56 @@ export interface SliceResult {
   missing: string[];
 }
 
-export function sliceDocument(doc: Record<string, unknown>, operations: string[]): SliceResult {
+const HTTP_METHODS = new Set(["get", "post", "put", "patch", "delete", "head", "options", "trace"]);
+
+export function resolveOperationRefs(
+  doc: Record<string, unknown>,
+  operations: string[],
+): { operations: string[]; missing: string[] } {
+  const byKey = new Set<string>();
+  const byId = new Map<string, string[]>();
   const paths = isObject(doc.paths) ? doc.paths : {};
-  const selected = new Map<string, { method: string; path: string }>();
+  for (const [opPath, item] of Object.entries(paths)) {
+    if (!isObject(item)) continue;
+    for (const [method, op] of Object.entries(item)) {
+      if (!HTTP_METHODS.has(method.toLowerCase()) || !isObject(op)) continue;
+      const key = operationKey(method, opPath);
+      byKey.add(key);
+      if (typeof op.operationId !== "string" || op.operationId.length === 0) continue;
+      const matches = byId.get(op.operationId) ?? [];
+      matches.push(key);
+      byId.set(op.operationId, matches);
+    }
+  }
+  const resolved: string[] = [];
   const missing: string[] = [];
   for (const raw of operations) {
     const parsed = parseOperation(raw);
-    if (!parsed) {
-      missing.push(raw);
+    if (parsed) {
+      const key = operationKey(parsed.method, parsed.path);
+      if (byKey.has(key)) resolved.push(key);
+      else missing.push(key);
       continue;
     }
-    const item = paths[parsed.path];
-    const op = isObject(item) ? item[parsed.method.toLowerCase()] : undefined;
-    if (!isObject(op)) missing.push(operationKey(parsed.method, parsed.path));
-    else selected.set(operationKey(parsed.method, parsed.path), parsed);
+    const id = raw.trim();
+    const matches = byId.get(id) ?? [];
+    if (matches.length === 1 && matches[0]) resolved.push(matches[0]);
+    else if (matches.length > 1) {
+      throw new ApiweldError(`operationId ${id} matches more than one operation: ${matches.join(", ")}`);
+    } else missing.push(raw);
+  }
+  return { operations: resolved, missing };
+}
+
+export function sliceDocument(doc: Record<string, unknown>, operations: string[]): SliceResult {
+  const paths = isObject(doc.paths) ? doc.paths : {};
+  const selected = new Map<string, { method: string; path: string }>();
+  const resolved = resolveOperationRefs(doc, operations);
+  const missing = [...resolved.missing];
+  for (const key of resolved.operations) {
+    const parsed = parseOperation(key);
+    if (!parsed) continue;
+    selected.set(key, parsed);
   }
 
   const slicedPaths: Record<string, unknown> = {};
