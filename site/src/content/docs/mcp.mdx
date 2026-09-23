@@ -1,0 +1,58 @@
+---
+title: MCP tools
+description: The stdio MCP server agents use to search, weld, check drift, and fetch a heal plan.
+sidebar:
+  order: 4
+  label: MCP tools
+---
+
+`apiweld mcp` speaks Model Context Protocol on standard input and output. It does not listen on a port. Register it once in the agent's config. `apiweld init --agents` prints a snippet for the common ones.
+
+Each tool is one CLI command. Anything the agent does, you can rerun from a shell. See the [CLI](/cli) for flags those commands share (`--json`, `--offline`).
+
+## Tools
+
+| Tool | CLI | Returns |
+| --- | --- | --- |
+| `search_apis` | `apiweld search <query>` | Ranked APIs: one-line description, auth style, and how fresh the spec is. |
+| `search_operations` | `apiweld search --ops <query> [--api id]` | Matching endpoints, across the catalog or inside one API. |
+| `describe_operation` | `apiweld show <api> "<METHOD path>"` | A compact signature shaped like the call the agent will write. |
+| `add_operations` | `apiweld add <api> "<op>"…` | Updates config, generates the client, returns the import path and an example call. |
+| `remove_operations` | `apiweld remove <api> "<op>"…` | Shrinks the slice and regenerates. |
+| `check_drift` | `apiweld check [api]` | Findings for selected operations only, already classified. |
+| `get_heal_plan` | `apiweld heal <api>` | Findings, affected call sites, and suggested edits. |
+| `verify` | `apiweld verify` | Type-check result, plus the optional test command. |
+
+`check_drift` arrives with the watch release. `get_heal_plan` and `verify` arrive with the heal release. The search and weld tools are the first cut. The [roadmap](/roadmap) spells out which release is done when which loop works.
+
+## What describe_operation spends tokens on
+
+The default payload is a signature, not a schema dump. Nested types stay collapsed until the agent passes a depth.
+
+```ts
+// stripe · POST /v1/refunds · auth: bearer (secret key)
+createRefund(body: {
+  charge?: string;            // ID of the charge to refund
+  payment_intent?: string;
+  amount?: number;            // minor units; defaults to the full amount
+  reason?: "duplicate" | "fraudulent" | "requested_by_customer";
+  metadata?: Record<string, string>;
+}): Promise<Refund>           // errors: 400, 401, 402, 404
+```
+
+`--depth n` on `apiweld show` (and the matching tool argument) expands nested types when the agent actually needs them.
+
+## Where the server is allowed to write
+
+The process may write only:
+
+- the configured `output` directory (generated clients)
+- `apiweld.config.ts`
+- `apiweld.lock.json`
+- `.apiweld/` (reports and the runtime drift log)
+
+It does not edit application source. Applying a heal plan's call-site fixes is the agent's job, in the editor, where you can review the diff.
+
+## Onboarding a repo
+
+`apiweld init --agents` adds a short instruction: for third-party HTTP, use Apiweld instead of writing the calls by hand or depending on a full SDK. That file is yours to edit. The server does not rewrite it again on later runs.

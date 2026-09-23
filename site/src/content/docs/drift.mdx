@@ -1,0 +1,53 @@
+---
+title: Drift detection
+description: How apiweld check decides that a spec change matters, and which class of change it is.
+sidebar:
+  order: 6
+  label: Drift detection
+---
+
+`apiweld check` runs on your machine: from a pre-commit hook, from your own CI, or when an agent calls `check_drift`. It does not run on a schedule that Apiweld operates. You own the cron.
+
+The check looks only at operations in the [lockfile](/config). A new field on an endpoint you never selected is invisible.
+
+## The pass
+
+<Steps>
+  <Step title="Conditional fetch">
+    GET the resolved URL with the stored ETag. A 304, or a body whose `specHash` matches the lock, ends the pass. No diff, no output.
+  </Step>
+  <Step title="Normalize and re-slice">
+    The engine normalizes the new spec (bundle refs, sort keys, upgrade Swagger 2.0 to OpenAPI 3.x). The slicer applies the same operation list. An operation that no longer resolves is recorded.
+  </Step>
+  <Step title="Compare slice hashes">
+    If `specHash` moved and `sliceHash` did not, only unused parts of the spec changed. The lock is updated quietly. Nobody is paged.
+  </Step>
+  <Step title="Diff and classify">
+    The engine runs oasdiff's breaking-change checks on the full old and new specs. Apiweld then keeps findings whose method and path are in your selection. Shared schema changes are reported on every selected operation that uses the schema. Removing a selected operation is an `api-removed` finding.
+  </Step>
+  <Step title="Report and exit">
+    A terminal table by default, `--json` for machines, and a Markdown report under `.apiweld/reports/`. `--fail-on breaking` is the default CI gate. `--fail-on risky` is stricter.
+  </Step>
+</Steps>
+
+Filtering happens after the diff, not before it. That keeps oasdiff's attribution for shared schemas. If a spec is large enough that a full diff is the wrong trade (some cloud vendors), a later threshold can pre-slice. v0.1 does not need that path.
+
+## Classes
+
+oasdiff speaks `ERR`, `WARN`, and `INFO`. Apiweld maps them:
+
+| oasdiff | Class | Typical change | Default action |
+| --- | --- | --- | --- |
+| `ERR` | **breaking** | Operation removed. Required request field or parameter added. Response property removed or retyped. Request enum value removed. | Write a [heal plan](/heal). Do not regenerate over the current client. |
+| `WARN` | **risky** | Response enum value added. Field became nullable. Security scheme changed. Operation deprecated. | Regenerate in a worktree, type-check, and report. |
+| `INFO` | **safe** | Optional field or parameter added. Description edited. | Auto-regenerate when `policy.autoRegenerate` is `"safe"`. |
+
+A per-API override can remap a noisy oasdiff check id when a provider's style makes one rule fire on purpose. The override is yours, in config, not a global mute.
+
+## Runtime signal
+
+Specs lie, or lag. With `validators: "zod"`, the generated client can validate responses in report-only mode (the v0.4 release). A mismatch appends one line to `.apiweld/drift.log.jsonl`: operation, JSON path, expected type, received type, timestamp. Payload values are not stored. `apiweld check` includes that log in its report so a live drift shows up next to spec drift.
+
+## Update
+
+`apiweld update` is check plus the policy. Safe findings regenerate in place when the API allows it. Anything breaking stops at the plan. Risky findings are reported from the worktree type-check rather than silently written into your branch.
